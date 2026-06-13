@@ -72,6 +72,25 @@ Qualquer push na `main` atualiza o app.
    em **Testar conexão**.
 3. Adicione o app à tela inicial (menu do navegador → "Adicionar à tela inicial").
 
+## Solução de problemas de conexão
+
+Toque em **Testar conexão** nos Ajustes — o app agora mostra a causa exata. As mais comuns:
+
+- **"respondeu com HTML / tela de login do Google"**: a implantação não está pública.
+  Vá em **Implantar → Gerenciar implantações → editar (lápis)** e em **Quem pode acessar**
+  escolha **Qualquer pessoa** (não pode ser "Somente eu" nem "Qualquer pessoa com conta Google").
+- **"Token inválido"**: o token nos Ajustes não bate com a propriedade `API_TOKEN`
+  (Configurações do projeto → Propriedades do script). Acerte um dos dois.
+- **"Não encontrei uma das abas"**: a planilha precisa ter as abas com os nomes exatos
+  `Questoes`, `Progresso` e `Respostas` (sem acento).
+- **"não foi possível alcançar o script / erro de rede"**: confirme que a URL termina em
+  `/exec` (é a URL da implantação, não a do editor). O app tenta um modo alternativo (JSONP)
+  automaticamente; para ele funcionar, reimplante o `Code.gs` desta versão (que adiciona
+  suporte a JSONP) em **Implantar → Gerenciar implantações → Nova versão**.
+
+> Ao editar o `Code.gs`, sempre crie uma **Nova versão** da implantação, senão a URL `/exec`
+> continua servindo o código antigo.
+
 ## Desenvolvimento
 
 Sem build: edite e dê push. Para rodar localmente (ES modules não funcionam via

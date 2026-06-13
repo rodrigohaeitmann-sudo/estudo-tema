@@ -15,15 +15,17 @@ const SHEET_PROGRESSO = 'Progresso';
 const SHEET_RESPOSTAS = 'Respostas';
 
 function doGet(e) {
-  return respond(handle((e && e.parameter) || {}, null));
+  const params = (e && e.parameter) || {};
+  return respond(handle(params, null), params.callback);
 }
 
 function doPost(e) {
+  const params = (e && e.parameter) || {};
   let body = {};
   try {
     body = JSON.parse((e.postData && e.postData.contents) || '{}');
   } catch (err) {}
-  return respond(handle((e && e.parameter) || {}, body));
+  return respond(handle(params, body), params.callback);
 }
 
 function handle(params, body) {
@@ -154,7 +156,14 @@ function toIso(v) {
   return v instanceof Date ? v.toISOString() : String(v || '');
 }
 
-function respond(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
+function respond(obj, callback) {
+  const json = JSON.stringify(obj);
+  // JSONP: quando o cliente envia ?callback=fn, devolve fn(json) como JavaScript,
+  // o que permite ler a resposta via <script> e contornar restrições de CORS.
+  if (callback) {
+    return ContentService.createTextOutput(callback + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json)
     .setMimeType(ContentService.MimeType.JSON);
 }

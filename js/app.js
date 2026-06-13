@@ -136,7 +136,7 @@ function finishSession() {
   session = null;
   ui.renderSessionEnd({ answered, correctFirstTry });
   refreshHome();
-  syncPending();
+  syncPending().catch(() => updateSyncUI());
 }
 
 // ---------- Estatísticas ----------
@@ -182,43 +182,30 @@ async function syncPending() {
   const { url, token } = state.getSettings();
   if (!url || !token || !navigator.onLine || !state.hasPending()) {
     updateSyncUI();
-    return false;
+    return;
   }
   const pending = state.getPending();
-  try {
-    await api.saveProgress(url, token, Object.values(pending.progress), pending.answers);
-    state.clearPending();
-    state.setLastSync(new Date().toISOString());
-    updateSyncUI();
-    return true;
-  } catch {
-    updateSyncUI();
-    return false;
-  }
+  await api.saveProgress(url, token, Object.values(pending.progress), pending.answers);
+  state.clearPending();
+  state.setLastSync(new Date().toISOString());
+  updateSyncUI();
 }
 
+// Lança em caso de erro (mensagem acionável vinda de api.js) para os chamadores exibirem.
 async function fullSync() {
   const { url, token } = state.getSettings();
-  if (!url || !token || !navigator.onLine) {
-    updateSyncUI();
-    return false;
-  }
+  if (!url || !token) throw new Error('Configure a URL do Apps Script e o token na aba Ajustes.');
+  if (!navigator.onLine) throw new Error('Sem conexão com a internet.');
   await syncPending();
-  try {
-    const data = await api.getAll(url, token);
-    state.setQuestions(data.questions.filter(isValidQuestion));
-    const toResend = state.mergeServerProgress(data.progress);
-    if (toResend.length > 0) {
-      state.queueProgressList(toResend);
-      await syncPending();
-    }
-    state.setLastSync(new Date().toISOString());
-    refreshHome();
-    return true;
-  } catch {
-    updateSyncUI();
-    return false;
+  const data = await api.getAll(url, token);
+  state.setQuestions(data.questions.filter(isValidQuestion));
+  const toResend = state.mergeServerProgress(data.progress);
+  if (toResend.length > 0) {
+    state.queueProgressList(toResend);
+    await syncPending();
   }
+  state.setLastSync(new Date().toISOString());
+  refreshHome();
 }
 
 // ---------- Configurações ----------
@@ -258,8 +245,12 @@ function bindConfig() {
 
   document.getElementById('btn-sync-now').addEventListener('click', async () => {
     ui.setConfigStatus('Sincronizando...');
-    const ok = await fullSync();
-    ui.setConfigStatus(ok ? 'Sincronização concluída.' : 'Não foi possível sincronizar. Verifique conexão, URL e token.');
+    try {
+      await fullSync();
+      ui.setConfigStatus('Sincronização concluída.');
+    } catch (err) {
+      ui.setConfigStatus('Falha: ' + err.message);
+    }
   });
 
   document.getElementById('btn-clear-local').addEventListener('click', () => {
@@ -290,14 +281,18 @@ function init() {
   document.getElementById('btn-start').addEventListener('click', startSession);
 
   window.addEventListener('online', () => {
-    syncPending();
+    syncPending().catch(() => updateSyncUI());
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') syncPending();
+    if (document.visibilityState === 'hidden') syncPending().catch(() => {});
   });
 
   refreshHome();
-  fullSync(); // renderiza do cache primeiro; atualiza quando o servidor responder
+  // Renderiza do cache primeiro e tenta atualizar; erro acionável aparece no indicador.
+  const s = state.getSettings();
+  if (s.url && s.token) {
+    fullSync().catch((err) => ui.setSyncIndicator('offline', 'Falha ao sincronizar: ' + err.message));
+  }
 }
 
 init();
