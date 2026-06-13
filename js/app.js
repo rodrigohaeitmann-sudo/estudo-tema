@@ -32,8 +32,11 @@ function computeHomeData() {
   return {
     dueCount,
     newCount,
+    newDoneToday: state.getNewToday(today),
+    newPerDay: settings.newPerDay,
     totalAnswered: entries.length,
     accuracy: totalAttempts > 0 ? totalCorrect / totalAttempts : null,
+    mastered: entries.filter((p) => p.interval >= 21).length,
     alert,
   };
 }
