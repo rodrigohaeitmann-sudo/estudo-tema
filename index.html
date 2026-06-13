@@ -1,86 +1,200 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="ambar" data-mode="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1a1a2e">
+  <meta name="theme-color" content="#f7f2e9">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="TEMa Estudo">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
   <title>TEMa Estudo — Mastologia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Theme/mode management — runs before first paint to avoid flash
+    (function () {
+      var t = localStorage.getItem('ms_theme') || 'ambar';
+      var m = localStorage.getItem('ms_mode') || 'light';
+      document.documentElement.dataset.theme = t;
+      document.documentElement.dataset.mode = m;
+
+      function syncBtns() {
+        var theme = document.documentElement.dataset.theme;
+        var mode  = document.documentElement.dataset.mode;
+        ['ambar','ametista','esmeralda'].forEach(function(n) {
+          var b = document.getElementById('btn-theme-' + n);
+          if (b) b.classList.toggle('on', theme === n);
+        });
+        ['light','night'].forEach(function(n) {
+          var b = document.getElementById('btn-mode-' + n);
+          if (b) b.classList.toggle('on', mode === n);
+        });
+      }
+
+      window.__setTheme = function(v) {
+        localStorage.setItem('ms_theme', v);
+        document.documentElement.dataset.theme = v;
+        syncBtns();
+      };
+      window.__setMode = function(v) {
+        localStorage.setItem('ms_mode', v);
+        document.documentElement.dataset.mode = v;
+        syncBtns();
+      };
+
+      document.addEventListener('DOMContentLoaded', syncBtns);
+    })();
+  </script>
 </head>
 <body>
   <main>
-    <!-- Tela: Início -->
+
+    <!-- ── Início ────────────────────────────────────────────── -->
     <section id="screen-home" class="screen active">
-      <header class="app-header">
-        <h1>TEMa Estudo</h1>
+      <div class="home-header">
+        <div>
+          <div class="home-eyebrow">Mastologia</div>
+          <div class="home-title">Bom estudo</div>
+        </div>
         <span id="sync-indicator" class="sync-indicator" title="Estado da sincronização">●</span>
-      </header>
+      </div>
+
       <div id="home-alert" class="alert hidden"></div>
+
       <div class="cards-row">
         <div class="card">
           <span class="card-number" id="due-count">–</span>
           <span class="card-label">para revisar</span>
         </div>
         <div class="card">
-          <span class="card-number" id="new-count">–</span>
+          <span class="card-number plain" id="new-count">–</span>
           <span class="card-label">novas hoje</span>
         </div>
       </div>
-      <div class="card card-wide">
-        <div class="mini-stat"><span id="home-total">–</span> questões respondidas</div>
-        <div class="mini-stat">acurácia geral: <span id="home-accuracy">–</span></div>
+
+      <div class="card">
+        <div class="goal-header">
+          <span class="section-title">Meta de hoje</span>
+          <span class="goal-counts" id="goal-counts">0 / 15</span>
+        </div>
+        <div class="track" style="height:9px"><div class="fill" id="goal-bar" style="width:0%"></div></div>
       </div>
-      <button id="btn-start" class="btn-primary">Estudar</button>
-      <p id="home-sync-text" class="muted"></p>
+
+      <div class="card perf-card">
+        <div class="perf-row">
+          <div>
+            <div class="section-title">Desempenho geral</div>
+            <div class="perf-sub" id="home-total-text">–</div>
+          </div>
+          <div class="perf-pct" id="home-accuracy">–</div>
+        </div>
+        <div class="track" style="height:7px;margin-top:13px">
+          <div class="fill" id="perf-bar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- keep id for JS compatibility -->
+      <span id="home-total" style="display:none">–</span>
+
+      <button id="btn-start" class="btn-primary">Estudar agora</button>
+      <p id="home-sync-text" class="sync-text"></p>
     </section>
 
-    <!-- Tela: Estudo -->
+    <!-- ── Estudo ─────────────────────────────────────────────── -->
     <section id="screen-study" class="screen">
       <div id="study-container">
-        <p class="muted">Nenhuma sessão ativa. Volte ao Início e toque em "Estudar".</p>
+        <p class="muted" style="margin-top:32px;text-align:center">
+          Nenhuma sessão ativa.<br>Volte ao Início e toque em "Estudar agora".
+        </p>
       </div>
     </section>
 
-    <!-- Tela: Estatísticas -->
+    <!-- ── Estatísticas ───────────────────────────────────────── -->
     <section id="screen-stats" class="screen">
-      <header class="app-header"><h1>Estatísticas</h1></header>
+      <h1 class="screen-title">Estatísticas</h1>
       <div id="stats-container"></div>
     </section>
 
-    <!-- Tela: Configurações -->
+    <!-- ── Ajustes ────────────────────────────────────────────── -->
     <section id="screen-config" class="screen">
-      <header class="app-header"><h1>Configurações</h1></header>
-      <label class="field">
-        <span>URL do Apps Script (termina em /exec)</span>
-        <input type="url" id="cfg-url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
-      </label>
-      <label class="field">
-        <span>Token de acesso</span>
-        <input type="password" id="cfg-token" placeholder="token definido no Apps Script" autocomplete="off">
-      </label>
-      <label class="field">
-        <span>Questões novas por dia</span>
-        <input type="number" id="cfg-new-per-day" min="0" max="200" value="15">
-      </label>
+      <h1 class="screen-title">Ajustes</h1>
+
+      <div class="card settings-card">
+        <div class="settings-section-title">Aparência</div>
+        <div class="seg-row">
+          <span class="seg-label">Tema</span>
+          <div class="seg-track">
+            <button class="seg-btn" id="btn-theme-ambar"     onclick="window.__setTheme('ambar')">Âmbar</button>
+            <button class="seg-btn" id="btn-theme-ametista"  onclick="window.__setTheme('ametista')">Ametista</button>
+            <button class="seg-btn" id="btn-theme-esmeralda" onclick="window.__setTheme('esmeralda')">Esmeralda</button>
+          </div>
+        </div>
+        <div class="seg-row" style="margin-bottom:0">
+          <span class="seg-label">Modo</span>
+          <div class="seg-track">
+            <button class="seg-btn" id="btn-mode-light" onclick="window.__setMode('light')">Claro</button>
+            <button class="seg-btn" id="btn-mode-night" onclick="window.__setMode('night')">Noturno</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card settings-card">
+        <div class="settings-section-title">Sincronização</div>
+        <label class="field">
+          <span>URL do Apps Script (termina em /exec)</span>
+          <input type="url" id="cfg-url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Token de acesso</span>
+          <input type="password" id="cfg-token" placeholder="token definido no Apps Script" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Questões novas por dia</span>
+          <input type="number" id="cfg-new-per-day" min="0" max="200" value="15">
+        </label>
+      </div>
+
       <button id="btn-save-config" class="btn-primary">Salvar</button>
-      <button id="btn-test-connection" class="btn-secondary">Testar conexão</button>
-      <button id="btn-sync-now" class="btn-secondary">Sincronizar agora</button>
+      <div style="display:flex;gap:10px">
+        <button id="btn-test-connection" class="btn-secondary" style="flex:1;margin-bottom:12px">Testar conexão</button>
+        <button id="btn-sync-now" class="btn-secondary" style="flex:1;margin-bottom:12px">Sincronizar</button>
+      </div>
       <button id="btn-clear-local" class="btn-danger">Apagar dados locais</button>
-      <p id="config-status" class="muted"></p>
+      <p id="config-status" class="sync-text"></p>
     </section>
+
   </main>
 
   <nav id="bottom-nav">
-    <button data-screen="home" class="active"><span class="nav-icon">🏠</span>Início</button>
-    <button data-screen="study"><span class="nav-icon">📚</span>Estudo</button>
-    <button data-screen="stats"><span class="nav-icon">📊</span>Stats</button>
-    <button data-screen="config"><span class="nav-icon">⚙️</span>Ajustes</button>
+    <button data-screen="home" class="active">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 10.5 12 4l8 6.5"/><path d="M5.5 9.5V19a1 1 0 0 0 1 1H10v-5h4v5h3.5a1 1 0 0 0 1-1V9.5"/>
+      </svg>
+      Início
+    </button>
+    <button data-screen="study">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="6" width="12" height="14" rx="2"/><path d="M7 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2"/>
+      </svg>
+      Estudo
+    </button>
+    <button data-screen="stats">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 20v-7"/><path d="M12 20V5"/><path d="M19 20v-10"/>
+      </svg>
+      Stats
+    </button>
+    <button data-screen="config">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.2"/><path d="M4 17h3"/><path d="M13 17h7"/><circle cx="9" cy="17" r="2.2"/>
+      </svg>
+      Ajustes
+    </button>
   </nav>
 
   <script type="module" src="js/app.js"></script>
