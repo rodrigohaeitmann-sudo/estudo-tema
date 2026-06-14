@@ -29,6 +29,18 @@ function computeHomeData() {
     alert = 'Nenhuma questão carregada ainda. Verifique a conexão e toque em "Sincronizar agora" nos Ajustes.';
   }
 
+  // Top weak areas (kind='area') com acurácia recente < 60% e ≥ 3 respostas
+  const tagStats = state.getTagStats();
+  const weakAreas = Object.values(tagStats)
+    .filter((s) => s.kind === 'area' && s.recent.length >= 3)
+    .map((s) => ({
+      tag: s.tag,
+      accuracy: s.recent.filter((r) => r.correct).length / s.recent.length,
+    }))
+    .filter((s) => s.accuracy < 0.6)
+    .sort((a, b) => a.accuracy - b.accuracy)
+    .slice(0, 3);
+
   return {
     dueCount,
     newCount,
@@ -37,6 +49,7 @@ function computeHomeData() {
     totalAnswered: entries.length,
     accuracy: totalAttempts > 0 ? totalCorrect / totalAttempts : null,
     mastered: entries.filter((p) => p.interval >= 21).length,
+    weakAreas,
     alert,
   };
 }
@@ -68,16 +81,60 @@ function shuffle(arr) {
   return arr;
 }
 
+function questionTagKeys(q) {
+  const keys = [];
+  if (q.area) keys.push('area:' + q.area);
+  if (q.tipo) keys.push('tipo:' + q.tipo);
+  return keys;
+}
+
+function hasWeakTag(question, weakKeys) {
+  if (!weakKeys.size) return false;
+  return questionTagKeys(question).some((k) => weakKeys.has(k));
+}
+
 function buildQueue() {
   const questions = state.getQuestions();
   const progress = state.getProgress();
   const settings = state.getSettings();
   const today = srs.todayStr();
+  const weakKeys = state.getWeakTagKeys();
 
-  const due = shuffle(questions.filter((q) => progress[q.id] && srs.isDue(progress[q.id], today)));
+  const due = questions.filter((q) => progress[q.id] && srs.isDue(progress[q.id], today));
+  // Due questions with weak tags are surfaced first so deficits are addressed early
+  const weakDue = shuffle(due.filter((q) => hasWeakTag(q, weakKeys)));
+  const otherDue = shuffle(due.filter((q) => !hasWeakTag(q, weakKeys)));
+
   const allowance = Math.max(0, settings.newPerDay - state.getNewToday(today));
   const fresh = questions.filter((q) => !progress[q.id]).slice(0, allowance);
-  return [...due, ...fresh];
+  return [...weakDue, ...otherDue, ...fresh];
+}
+
+// Returns up to `limit` questions from the same area or tipo that are not already
+// in the current session queue. Prioritises due cards, then shortest interval.
+function getSisterQuestions(question, session, limit) {
+  limit = limit === undefined ? 2 : limit;
+  const questions = state.getQuestions();
+  const progress = state.getProgress();
+  const today = srs.todayStr();
+  const inSession = new Set(session.queue.map((q) => q.id));
+
+  return questions
+    .filter((q) => {
+      if (inSession.has(q.id)) return false;
+      const sameArea = question.area && q.area === question.area;
+      const sameTipo = question.tipo && q.tipo === question.tipo;
+      return sameArea || sameTipo;
+    })
+    .sort((a, b) => {
+      const pa = progress[a.id];
+      const pb = progress[b.id];
+      const aDue = pa && srs.isDue(pa, today) ? 0 : 1;
+      const bDue = pb && srs.isDue(pb, today) ? 0 : 1;
+      if (aDue !== bDue) return aDue - bDue;
+      return (pa ? pa.interval : 0) - (pb ? pb.interval : 0);
+    })
+    .slice(0, limit);
 }
 
 function startSession() {
@@ -86,7 +143,8 @@ function startSession() {
   session = {
     queue,
     position: 0,
-    firstTry: {}, // questionId -> acertou na primeira apresentação da sessão
+    firstTry: {},    // questionId → acertou na primeira apresentação
+    injected: new Set(), // IDs injetados como irmãs (não geram novas injeções)
   };
   ui.showScreen('study');
   presentNext();
@@ -114,22 +172,45 @@ function onAnswer(question, chosen) {
   if (prev.attempts === 0) state.incrementNewToday(today);
   const next = srs.schedule(prev, isCorrect, now);
   state.updateProgress(next);
+
+  // Registra desempenho por tag (área + tipo)
+  const tags = [];
+  if (question.area) tags.push({ key: 'area:' + question.area, tag: question.area, kind: 'area' });
+  if (question.tipo) tags.push({ key: 'tipo:' + question.tipo, tag: question.tipo, kind: 'tipo' });
+  if (tags.length) state.recordTagAnswer(tags, isCorrect, next.lastAnswered);
+
   state.queueAnswer(next, {
     ts: next.lastAnswered,
     questionId: question.id,
     chosen,
     correct: isCorrect ? 1 : 0,
     tema: question.tema || '',
+    area: question.area || '',
+    tipo: question.tipo || '',
   });
 
   if (!(question.id in session.firstTry)) session.firstTry[question.id] = isCorrect;
-  if (!isCorrect) session.queue.push(question);
+
+  let sistersAdded = 0;
+  if (!isCorrect) {
+    session.queue.push(question);
+    // Injeta questões irmãs (mesma área/tipo) apenas se não for ela mesma uma injetada
+    if (!session.injected.has(question.id) && (question.area || question.tipo)) {
+      const sisters = getSisterQuestions(question, session);
+      if (sisters.length) {
+        const insertAt = Math.min(session.position + 2, session.queue.length - 1);
+        session.queue.splice(insertAt, 0, ...sisters);
+        sisters.forEach((s) => session.injected.add(s.id));
+        sistersAdded = sisters.length;
+      }
+    }
+  }
 
   updateSyncUI();
   ui.showFeedback(question, chosen, isCorrect, () => {
     session.position += 1;
     presentNext();
-  });
+  }, sistersAdded);
 }
 
 function finishSession() {
@@ -166,12 +247,31 @@ function refreshStats() {
     .map((t) => ({ ...t, accuracy: t.attempts > 0 ? t.correct / t.attempts : 0 }))
     .sort((a, b) => a.tema.localeCompare(b.tema));
 
+  // Estatísticas por tag vêm do registro de tag_stats (acurácia por tentativa)
+  const tagStats = state.getTagStats();
+  const makeTagRows = (kind) =>
+    Object.values(tagStats)
+      .filter((s) => s.kind === kind && s.attempts > 0)
+      .map((s) => ({
+        name: s.tag,
+        attempts: s.attempts,
+        correct: s.correct,
+        accuracy: s.correct / s.attempts,
+        recentAcc: s.recent.length
+          ? s.recent.filter((r) => r.correct).length / s.recent.length
+          : null,
+        recentCount: s.recent.length,
+      }))
+      .sort((a, b) => a.accuracy - b.accuracy); // pior primeiro
+
   ui.renderStats({
     totalAnswered: entries.length,
     totalAttempts,
     accuracy: totalAttempts > 0 ? totalCorrect / totalAttempts : 0,
     mastered,
     byTema,
+    byArea: makeTagRows('area'),
+    byTipo: makeTagRows('tipo'),
   });
 }
 

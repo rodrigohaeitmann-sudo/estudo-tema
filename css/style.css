@@ -297,6 +297,48 @@ button:disabled { opacity:.45;cursor:default }
 .comentario { font-size:14.5px;line-height:1.5;color:var(--text);white-space:pre-wrap }
 .fonte { color:var(--text3);font-size:12px;margin-top:11px }
 
+/* ── QUESTION TAGS (área + tipo) ─────────────────────────────────────────── */
+.question-tag-row {
+  display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px
+}
+.tag-chip {
+  display:inline-flex;align-items:center;
+  font-size:11px;font-weight:700;
+  border-radius:6px;padding:3px 8px;
+  white-space:nowrap;
+}
+.tag-area {
+  background:var(--acc-soft);color:var(--acc-soft-txt)
+}
+.tag-tipo {
+  background:var(--surf-alt);color:var(--text2);
+  border:1px solid var(--border)
+}
+
+/* Sister-injection note in feedback */
+.sister-note {
+  font-size:12.5px;font-weight:600;color:var(--accent);
+  background:var(--acc-soft);border-radius:8px;
+  padding:6px 10px;margin:8px 0 10px;
+}
+
+/* ── HOME WEAK AREAS ─────────────────────────────────────────────────────── */
+.weak-areas-card { padding:14px 16px }
+.weak-header {
+  font-size:12px;font-weight:700;letter-spacing:.8px;
+  text-transform:uppercase;color:var(--bad);margin-bottom:10px
+}
+.weak-chips { display:flex;flex-wrap:wrap;gap:7px }
+.weak-chip {
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--bad-soft);border:1px solid var(--bad-border);
+  color:var(--text);border-radius:10px;padding:6px 11px;
+  font-size:13px;font-weight:600
+}
+.weak-pct {
+  font-size:12px;font-weight:700;color:var(--bad)
+}
+
 .session-summary { text-align:center;padding:48px 0 }
 .session-summary .big { font-size:3.5rem }
 .session-summary h2 { font-size:22px;margin:8px 0 4px;color:var(--text);font-weight:800 }
@@ -323,7 +365,15 @@ button:disabled { opacity:.45;cursor:default }
 .tema-row { padding:11px 0;border-top:1px solid var(--border) }
 .tema-row-header { display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px }
 .tema-name { font-size:14px;font-weight:600;color:var(--text) }
-.tema-meta { font-size:12.5px;color:var(--text2);font-weight:600;padding-left:10px;white-space:nowrap }
+.tema-meta { font-size:12px;color:var(--text2);font-weight:600;padding-left:8px;white-space:nowrap;text-align:right;line-height:1.5 }
+.deficit-badge {
+  display:inline-block;font-size:10px;font-weight:700;
+  background:var(--bad);color:#fff;border-radius:5px;
+  padding:1px 5px;margin-left:6px;vertical-align:middle
+}
+.recent-acc { font-size:11px;color:var(--text3);display:block }
+.recent-acc.weak { color:var(--bad);font-weight:700 }
+.stats-hint { font-size:12px;color:var(--text3);margin:0 0 4px }
 
 /* ── SETTINGS SCREEN ─────────────────────────────────────────────────────── */
 .settings-card { margin-bottom:16px }

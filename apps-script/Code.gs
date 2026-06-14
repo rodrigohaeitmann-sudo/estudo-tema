@@ -51,6 +51,8 @@ function getAll() {
       return {
         id: String(q.id),
         tema: String(q.tema || ''),
+        area: String(q.area || ''),
+        tipo: String(q.tipo || ''),
         enunciado: String(q.enunciado || ''),
         alt_a: String(q.alt_a || ''),
         alt_b: String(q.alt_b || ''),
@@ -118,9 +120,9 @@ function saveProgress(body) {
     // Log append-only na aba Respostas
     if (answers.length) {
       const sr = ss.getSheetByName(SHEET_RESPOSTAS);
-      sr.getRange(sr.getLastRow() + 1, 1, answers.length, 5).setValues(
+      sr.getRange(sr.getLastRow() + 1, 1, answers.length, 7).setValues(
         answers.map(function (a) {
-          return [a.ts, String(a.questionId), a.chosen, a.correct, a.tema || ''];
+          return [a.ts, String(a.questionId), a.chosen, a.correct, a.tema || '', a.area || '', a.tipo || ''];
         })
       );
     }

@@ -9,6 +9,7 @@ const K = {
   pending: 'tema:pending',
   newToday: 'tema:newToday',
   lastSync: 'tema:lastSync',
+  tagStats: 'tema:tag_stats',
 };
 
 function read(key, fallback) {
@@ -108,6 +109,41 @@ export function incrementNewToday(today) {
   write(K.newToday, { date: today, count: getNewToday(today) + 1 });
 }
 
+// --- Estatísticas por tag (área e tipo de questão) ---
+// Estrutura: { [key]: { tag, kind, attempts, correct, recent: [{ts, correct}] } }
+// 'key' = "area:<nome>" ou "tipo:<nome>"; 'recent' mantém as últimas 10 respostas.
+
+export function getTagStats() {
+  return read(K.tagStats, {});
+}
+
+export function recordTagAnswer(tags, isCorrect, ts) {
+  const stats = getTagStats();
+  for (const { key, tag, kind } of tags) {
+    if (!stats[key]) stats[key] = { tag, kind, attempts: 0, correct: 0, recent: [] };
+    stats[key].attempts += 1;
+    if (isCorrect) stats[key].correct += 1;
+    stats[key].recent.unshift({ ts, correct: isCorrect });
+    if (stats[key].recent.length > 10) stats[key].recent.length = 10;
+  }
+  write(K.tagStats, stats);
+}
+
+// Retorna Set de keys fracas (acurácia recente < threshold com mínimo de respostas).
+export function getWeakTagKeys(threshold, minAnswers) {
+  threshold = threshold === undefined ? 0.6 : threshold;
+  minAnswers = minAnswers === undefined ? 3 : minAnswers;
+  const stats = getTagStats();
+  const weak = new Set();
+  for (const key of Object.keys(stats)) {
+    const s = stats[key];
+    if (s.recent.length < minAnswers) continue;
+    const recentAcc = s.recent.filter((r) => r.correct).length / s.recent.length;
+    if (recentAcc < threshold) weak.add(key);
+  }
+  return weak;
+}
+
 // --- Última sincronização ---
 export function getLastSync() {
   return read(K.lastSync, '');
@@ -124,4 +160,5 @@ export function clearLocalData() {
   localStorage.removeItem(K.pending);
   localStorage.removeItem(K.newToday);
   localStorage.removeItem(K.lastSync);
+  localStorage.removeItem(K.tagStats);
 }

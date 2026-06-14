@@ -26,7 +26,7 @@ export function setSyncIndicator(status, text) {
   if (text !== undefined) syncText.textContent = text;
 }
 
-export function renderHome({ dueCount, newCount, totalAnswered, accuracy, alert, newDoneToday, newPerDay, mastered }) {
+export function renderHome({ dueCount, newCount, totalAnswered, accuracy, alert, newDoneToday, newPerDay, mastered, weakAreas }) {
   document.getElementById('due-count').textContent = dueCount;
   document.getElementById('new-count').textContent = newCount;
   document.getElementById('home-total').textContent = totalAnswered;
@@ -55,6 +55,20 @@ export function renderHome({ dueCount, newCount, totalAnswered, accuracy, alert,
     perfBar.style.width = accuracy !== null ? Math.round(accuracy * 100) + '%' : '0%';
   }
 
+  // Áreas fracas detectadas pelo algoritmo
+  const weakEl = document.getElementById('home-weak-areas');
+  if (weakEl) {
+    if (weakAreas && weakAreas.length > 0) {
+      const chips = weakAreas.map((w) =>
+        `<span class="weak-chip">${escapeHtml(w.tag)}<span class="weak-pct">${Math.round(w.accuracy * 100)}%</span></span>`
+      ).join('');
+      weakEl.innerHTML = `<div class="weak-header">Focos de atenção</div><div class="weak-chips">${chips}</div>`;
+      weakEl.classList.remove('hidden');
+    } else {
+      weakEl.classList.add('hidden');
+    }
+  }
+
   // Alert
   const alertEl = document.getElementById('home-alert');
   if (alert) {
@@ -70,11 +84,16 @@ export function renderHome({ dueCount, newCount, totalAnswered, accuracy, alert,
 export function renderQuestion(question, { position, total }, onChoose) {
   const container = document.getElementById('study-container');
   const pct = total > 0 ? Math.round(((position - 1) / total) * 100) : 0;
+  const tagChips = [
+    question.area ? `<span class="tag-chip tag-area">${escapeHtml(question.area)}</span>` : '',
+    question.tipo ? `<span class="tag-chip tag-tipo">${escapeHtml(question.tipo)}</span>` : '',
+  ].filter(Boolean).join('');
   container.innerHTML = `
     <div class="session-header">
       <span class="session-pos">Questão ${position} de ${total}</span>
       <span class="question-tema">${escapeHtml(question.tema || 'Sem tema')}</span>
     </div>
+    ${tagChips ? `<div class="question-tag-row">${tagChips}</div>` : ''}
     <div class="progress-bar"><div style="width:${pct}%"></div></div>
     <p class="question-text">${escapeHtml(question.enunciado)}</p>
     <div id="alternatives"></div>
@@ -93,7 +112,7 @@ export function renderQuestion(question, { position, total }, onChoose) {
   }
 }
 
-export function showFeedback(question, chosen, isCorrect, onNext) {
+export function showFeedback(question, chosen, isCorrect, onNext, sistersAdded) {
   document.querySelectorAll('#alternatives .alt-btn').forEach((btn) => {
     btn.classList.add('revealed');
     if (btn.dataset.letter === question.gabarito) btn.classList.add('correct');
@@ -102,15 +121,19 @@ export function showFeedback(question, chosen, isCorrect, onNext) {
   const area = document.getElementById('feedback-area');
   const cls = isCorrect ? 'ok' : 'fail';
   const icon = isCorrect ? '✓' : '✕';
-  const verdictText = isCorrect
+  let verdictText = isCorrect
     ? 'Você acertou!'
     : `Resposta correta: ${escapeHtml(question.gabarito)}. A questão voltará nesta sessão.`;
+  const sisterNote = !isCorrect && sistersAdded
+    ? `<div class="sister-note">${sistersAdded === 1 ? '1 questão similar adicionada' : `${sistersAdded} questões similares adicionadas`} à sessão para reforço</div>`
+    : '';
   area.innerHTML = `
     <div class="feedback-box">
       <div class="verdict ${cls}">
         <span class="verdict-icon">${icon}</span>
         <span>${verdictText}</span>
       </div>
+      ${sisterNote}
       <div class="comentario">${escapeHtml(question.comentario || 'Sem comentário cadastrado.')}</div>
       ${question.fonte ? `<div class="fonte">Fonte · ${escapeHtml(question.fonte)}${question.ano ? ` (${escapeHtml(question.ano)})` : ''}</div>` : ''}
     </div>
@@ -134,26 +157,53 @@ export function renderSessionEnd({ answered, correctFirstTry }) {
   container.querySelector('#btn-back-home').addEventListener('click', () => showScreen('home'), { once: true });
 }
 
-export function renderStats({ totalAnswered, totalAttempts, accuracy, mastered, byTema }) {
+function tagRows(items, nameKey) {
+  if (!items || items.length === 0) return '<p class="muted" style="font-size:13px;padding:8px 0">Nenhum dado ainda — responda questões com área/tipo cadastrados.</p>';
+  return items.map((t) => {
+    const pct = Math.round(t.accuracy * 100);
+    const recentPct = t.recentAcc !== null && t.recentAcc !== undefined ? Math.round(t.recentAcc * 100) : null;
+    const isWeak = recentPct !== null && t.recentCount >= 3 && recentPct < 60;
+    const barColor = isWeak ? 'var(--bad)' : pct >= 75 ? 'var(--good)' : 'var(--accent)';
+    const badge = isWeak ? '<span class="deficit-badge">Déficit</span>' : '';
+    const recentInfo = recentPct !== null
+      ? `<span class="recent-acc ${isWeak ? 'weak' : ''}">recente ${recentPct}%</span>`
+      : '';
+    return `
+      <div class="tema-row">
+        <div class="tema-row-header">
+          <span class="tema-name">${escapeHtml(t[nameKey])}${badge}</span>
+          <span class="tema-meta">${t.attempts} tentativas · ${pct}% ${recentInfo}</span>
+        </div>
+        <div class="track" style="height:6px">
+          <div class="fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+export function renderStats({ totalAnswered, totalAttempts, accuracy, mastered, byTema, byArea, byTipo }) {
   const container = document.getElementById('stats-container');
   if (totalAnswered === 0) {
     container.innerHTML = '<p class="muted" style="margin-top:8px">Nenhuma questão respondida ainda.</p>';
     return;
   }
   const acc = totalAttempts > 0 ? Math.round(accuracy * 100) : 0;
-  const rows = byTema.map((t) => {
+  const temaRows = byTema.map((t) => {
     const tAcc = Math.round(t.accuracy * 100);
     return `
       <div class="tema-row">
         <div class="tema-row-header">
           <span class="tema-name">${escapeHtml(t.tema)}</span>
-          <span class="tema-meta">${t.answered} · ${tAcc}%</span>
+          <span class="tema-meta">${t.answered} questões · ${tAcc}%</span>
         </div>
         <div class="track" style="height:6px">
           <div class="fill" style="width:${tAcc}%"></div>
         </div>
       </div>`;
   }).join('');
+
+  const hasAreaData = byArea && byArea.length > 0;
+  const hasTipoData = byTipo && byTipo.length > 0;
 
   container.innerHTML = `
     <div class="stats-top">
@@ -170,9 +220,23 @@ export function renderStats({ totalAnswered, totalAttempts, accuracy, mastered, 
         <div class="small-lbl">dominadas</div>
       </div>
     </div>
+
+    ${hasAreaData ? `
+    <div class="card">
+      <div class="section-title" style="margin-bottom:6px">Por área clínica</div>
+      <p class="stats-hint">Ordenado da menor para a maior acurácia · "recente" = últimas 10 respostas</p>
+      ${tagRows(byArea, 'name')}
+    </div>` : ''}
+
+    ${hasTipoData ? `
+    <div class="card">
+      <div class="section-title" style="margin-bottom:6px">Por tipo de questão</div>
+      ${tagRows(byTipo, 'name')}
+    </div>` : ''}
+
     <div class="card">
       <div class="section-title" style="margin-bottom:6px">Por tema</div>
-      ${rows}
+      ${temaRows}
     </div>
   `;
 }
