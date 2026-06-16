@@ -69,14 +69,26 @@ function getAll() {
   const progress = readRows(ss, SHEET_PROGRESSO)
     .filter(function (p) { return p.question_id; })
     .map(function (p) {
+      // Lê tanto o novo formato (difficulty/stability) quanto o legado (ef/intervalo)
+      var hasFSRS = p.difficulty !== undefined && p.difficulty !== '';
+      var difficulty = hasFSRS
+        ? Number(p.difficulty) || 5
+        : Math.min(10, Math.max(1, 1 + (2.8 - (Number(p.ef) || 2.3)) * 6));
+      var stability = hasFSRS
+        ? Number(p.stability) || 0
+        : Number(p.intervalo) || 0;
+      var cardState = p.estado !== undefined && p.estado !== ''
+        ? Number(p.estado) || 0
+        : (stability >= 1 ? 2 : 0);
       return {
-        questionId: String(p.question_id),
-        ef: Number(p.ef) || 2.3,
-        interval: Number(p.intervalo) || 0,
-        reps: Number(p.reps) || 0,
-        due: toDateStr(p.due),
-        attempts: Number(p.tentativas) || 0,
-        correct: Number(p.acertos) || 0,
+        questionId:   String(p.question_id),
+        difficulty:   difficulty,
+        stability:    stability,
+        reps:         Number(p.reps) || 0,
+        cardState:    cardState,
+        due:          toDateStr(p.due),
+        attempts:     Number(p.tentativas) || 0,
+        correct:      Number(p.acertos) || 0,
         lastAnswered: toIso(p.ultima_resposta)
       };
     });
@@ -98,6 +110,7 @@ function saveProgress(body) {
     const answers = body.answers || [];
 
     // Upsert na aba Progresso (chave: question_id na coluna A)
+    // Colunas: question_id | difficulty | stability | reps | estado | due | tentativas | acertos | ultima_resposta
     const sh = ss.getSheetByName(SHEET_PROGRESSO);
     const last = sh.getLastRow();
     const ids = last > 1
@@ -105,8 +118,15 @@ function saveProgress(body) {
       : [];
     progress.forEach(function (p) {
       const row = [
-        String(p.questionId), p.ef, p.interval, p.reps,
-        p.due, p.attempts, p.correct, p.lastAnswered
+        String(p.questionId),
+        p.difficulty || 5,
+        p.stability  || 0,
+        p.reps       || 0,
+        p.cardState  || 2,
+        p.due,
+        p.attempts,
+        p.correct,
+        p.lastAnswered
       ];
       const idx = ids.indexOf(String(p.questionId));
       if (idx >= 0) {
@@ -118,11 +138,12 @@ function saveProgress(body) {
     });
 
     // Log append-only na aba Respostas
+    // Colunas: ts | question_id | chosen | correct | tema | area | tipo | rating
     if (answers.length) {
       const sr = ss.getSheetByName(SHEET_RESPOSTAS);
-      sr.getRange(sr.getLastRow() + 1, 1, answers.length, 7).setValues(
+      sr.getRange(sr.getLastRow() + 1, 1, answers.length, 8).setValues(
         answers.map(function (a) {
-          return [a.ts, String(a.questionId), a.chosen, a.correct, a.tema || '', a.area || '', a.tipo || ''];
+          return [a.ts, String(a.questionId), a.chosen, a.correct, a.tema || '', a.area || '', a.tipo || '', a.rating || 0];
         })
       );
     }

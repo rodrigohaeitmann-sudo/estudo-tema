@@ -315,11 +315,36 @@ button:disabled { opacity:.45;cursor:default }
   border:1px solid var(--border)
 }
 
-/* Sister-injection note in feedback */
-.sister-note {
-  font-size:12.5px;font-weight:600;color:var(--accent);
-  background:var(--acc-soft);border-radius:8px;
-  padding:6px 10px;margin:8px 0 10px;
+/* ── FSRS RATING BUTTONS ─────────────────────────────────────────────────── */
+.rating-header {
+  font-size:12.5px;font-weight:600;color:var(--text2);
+  text-align:center;margin:16px 0 10px;
+}
+.rating-row {
+  display:flex;gap:8px
+}
+.rating-btn {
+  flex:1;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  border:none;border-radius:14px;padding:13px 4px;
+  cursor:pointer;font-family:inherit;
+  transition:opacity .15s,transform .1s;
+}
+.rating-btn:active { opacity:.8;transform:scale(.97) }
+.rating-label    { font-size:13px;font-weight:700;line-height:1.1 }
+.rating-interval { font-size:11px;font-weight:600;opacity:.8 }
+
+.rating-2 {
+  background:var(--bad-soft);color:var(--bad);
+  border:1.5px solid var(--bad-border)
+}
+.rating-3 {
+  background:var(--acc-soft);color:var(--acc-soft-txt);
+  border:1.5px solid var(--border-s)
+}
+.rating-4 {
+  background:var(--good-soft);color:var(--good);
+  border:1.5px solid var(--good)
 }
 
 /* ── HOME WEAK AREAS ─────────────────────────────────────────────────────── */

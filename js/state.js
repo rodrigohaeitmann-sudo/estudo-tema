@@ -144,6 +144,26 @@ export function getWeakTagKeys(threshold, minAnswers) {
   return weak;
 }
 
+// Migra progresso do formato SM-2 (ef/interval) para FSRS (difficulty/stability).
+// Executa uma única vez; entradas já no formato FSRS são ignoradas.
+export function migrateProgress() {
+  const progress = getProgress();
+  let changed = false;
+  for (const p of Object.values(progress)) {
+    if ('ef' in p && !('difficulty' in p)) {
+      // ef [1.3, 2.8] → difficulty [1, 10]: ef alto = fácil = D baixo
+      const ef = p.ef || 2.3;
+      p.difficulty = Math.round(Math.min(10, Math.max(1, 1 + (2.8 - ef) * 6)) * 10) / 10;
+      p.stability  = p.interval || 0;
+      p.cardState  = (p.interval || 0) >= 1 ? 2 : 0;
+      delete p.ef;
+      delete p.interval;
+      changed = true;
+    }
+  }
+  if (changed) write(K.progress, progress);
+}
+
 // --- Última sincronização ---
 export function getLastSync() {
   return read(K.lastSync, '');

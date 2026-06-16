@@ -9,18 +9,18 @@ let session = null;
 
 function computeHomeData() {
   const questions = state.getQuestions();
-  const progress = state.getProgress();
-  const settings = state.getSettings();
-  const today = srs.todayStr();
+  const progress  = state.getProgress();
+  const settings  = state.getSettings();
+  const today     = srs.todayStr();
 
   const dueCount = questions.filter((q) => progress[q.id] && srs.isDue(progress[q.id], today)).length;
-  const unseen = questions.filter((q) => !progress[q.id]).length;
+  const unseen   = questions.filter((q) => !progress[q.id]).length;
   const allowance = Math.max(0, settings.newPerDay - state.getNewToday(today));
-  const newCount = Math.min(unseen, allowance);
+  const newCount  = Math.min(unseen, allowance);
 
-  const entries = Object.values(progress).filter((p) => p.attempts > 0);
+  const entries      = Object.values(progress).filter((p) => p.attempts > 0);
   const totalAttempts = entries.reduce((s, p) => s + p.attempts, 0);
-  const totalCorrect = entries.reduce((s, p) => s + p.correct, 0);
+  const totalCorrect  = entries.reduce((s, p) => s + p.correct, 0);
 
   let alert = null;
   if (!settings.url || !settings.token) {
@@ -29,8 +29,7 @@ function computeHomeData() {
     alert = 'Nenhuma questão carregada ainda. Verifique a conexão e toque em "Sincronizar agora" nos Ajustes.';
   }
 
-  // Top weak areas (kind='area') com acurácia recente < 60% e ≥ 3 respostas
-  const tagStats = state.getTagStats();
+  const tagStats  = state.getTagStats();
   const weakAreas = Object.values(tagStats)
     .filter((s) => s.kind === 'area' && s.recent.length >= 3)
     .map((s) => ({
@@ -45,10 +44,10 @@ function computeHomeData() {
     dueCount,
     newCount,
     newDoneToday: state.getNewToday(today),
-    newPerDay: settings.newPerDay,
+    newPerDay:    settings.newPerDay,
     totalAnswered: entries.length,
     accuracy: totalAttempts > 0 ? totalCorrect / totalAttempts : null,
-    mastered: entries.filter((p) => p.interval >= 21).length,
+    mastered: entries.filter((p) => (p.stability || 0) >= 21).length,
     weakAreas,
     alert,
   };
@@ -95,46 +94,18 @@ function hasWeakTag(question, weakKeys) {
 
 function buildQueue() {
   const questions = state.getQuestions();
-  const progress = state.getProgress();
-  const settings = state.getSettings();
-  const today = srs.todayStr();
-  const weakKeys = state.getWeakTagKeys();
+  const progress  = state.getProgress();
+  const settings  = state.getSettings();
+  const today     = srs.todayStr();
+  const weakKeys  = state.getWeakTagKeys();
 
   const due = questions.filter((q) => progress[q.id] && srs.isDue(progress[q.id], today));
-  // Due questions with weak tags are surfaced first so deficits are addressed early
-  const weakDue = shuffle(due.filter((q) => hasWeakTag(q, weakKeys)));
+  const weakDue  = shuffle(due.filter((q) =>  hasWeakTag(q, weakKeys)));
   const otherDue = shuffle(due.filter((q) => !hasWeakTag(q, weakKeys)));
 
   const allowance = Math.max(0, settings.newPerDay - state.getNewToday(today));
-  const fresh = questions.filter((q) => !progress[q.id]).slice(0, allowance);
+  const fresh     = questions.filter((q) => !progress[q.id]).slice(0, allowance);
   return [...weakDue, ...otherDue, ...fresh];
-}
-
-// Returns up to `limit` questions from the same area or tipo that are not already
-// in the current session queue. Prioritises due cards, then shortest interval.
-function getSisterQuestions(question, session, limit) {
-  limit = limit === undefined ? 2 : limit;
-  const questions = state.getQuestions();
-  const progress = state.getProgress();
-  const today = srs.todayStr();
-  const inSession = new Set(session.queue.map((q) => q.id));
-
-  return questions
-    .filter((q) => {
-      if (inSession.has(q.id)) return false;
-      const sameArea = question.area && q.area === question.area;
-      const sameTipo = question.tipo && q.tipo === question.tipo;
-      return sameArea || sameTipo;
-    })
-    .sort((a, b) => {
-      const pa = progress[a.id];
-      const pb = progress[b.id];
-      const aDue = pa && srs.isDue(pa, today) ? 0 : 1;
-      const bDue = pb && srs.isDue(pb, today) ? 0 : 1;
-      if (aDue !== bDue) return aDue - bDue;
-      return (pa ? pa.interval : 0) - (pb ? pb.interval : 0);
-    })
-    .slice(0, limit);
 }
 
 function startSession() {
@@ -143,8 +114,8 @@ function startSession() {
   session = {
     queue,
     position: 0,
-    firstTry: {},    // questionId → acertou na primeira apresentação
-    injected: new Set(), // IDs injetados como irmãs (não geram novas injeções)
+    firstTry: {},          // questionId → acertou na primeira vez nesta sessão
+    injected: new Set(),   // IDs injetados como irmãs (não geram novas injeções)
   };
   ui.showScreen('study');
   presentNext();
@@ -163,27 +134,43 @@ function presentNext() {
   );
 }
 
+// Etapa 1: usuário escolhe alternativa → revela resposta + exibe botões de rating
 function onAnswer(question, chosen) {
   const isCorrect = chosen === question.gabarito;
-  const now = new Date();
+  const prev      = state.getProgress()[question.id] || srs.initialState(question.id);
+
+  // Para acertos: mostra 3 botões (Difícil/Ok/Fácil) com preview de intervalo
+  // Para erros: mostra apenas "Próxima" (rating automático = 1)
+  const previews = isCorrect ? srs.previewIntervals(prev) : null;
+
+  ui.showFeedback(question, chosen, isCorrect, previews, (rating) => {
+    commitAnswer(question, chosen, isCorrect, rating, prev);
+    session.position += 1;
+    presentNext();
+  });
+}
+
+// Etapa 2: usuário escolhe rating → persiste o agendamento FSRS
+function commitAnswer(question, chosen, isCorrect, rating, prev) {
+  const now   = new Date();
   const today = srs.todayStr(now);
 
-  const prev = state.getProgress()[question.id] || srs.initialState(question.id, now);
   if (prev.attempts === 0) state.incrementNewToday(today);
-  const next = srs.schedule(prev, isCorrect, now);
+
+  const next = srs.schedule(prev, isCorrect, rating, now);
   state.updateProgress(next);
 
-  // Registra desempenho por tag (área + tipo)
   const tags = [];
   if (question.area) tags.push({ key: 'area:' + question.area, tag: question.area, kind: 'area' });
   if (question.tipo) tags.push({ key: 'tipo:' + question.tipo, tag: question.tipo, kind: 'tipo' });
   if (tags.length) state.recordTagAnswer(tags, isCorrect, next.lastAnswered);
 
   state.queueAnswer(next, {
-    ts: next.lastAnswered,
+    ts:         next.lastAnswered,
     questionId: question.id,
     chosen,
     correct: isCorrect ? 1 : 0,
+    rating,
     tema: question.tema || '',
     area: question.area || '',
     tipo: question.tipo || '',
@@ -191,31 +178,50 @@ function onAnswer(question, chosen) {
 
   if (!(question.id in session.firstTry)) session.firstTry[question.id] = isCorrect;
 
-  let sistersAdded = 0;
-  if (!isCorrect) {
+  // Erros (rating 1 = Again): re-enfileira + injeta irmãs se houver
+  if (rating === 1) {
     session.queue.push(question);
-    // Injeta questões irmãs (mesma área/tipo) apenas se não for ela mesma uma injetada
     if (!session.injected.has(question.id) && (question.area || question.tipo)) {
       const sisters = getSisterQuestions(question, session);
       if (sisters.length) {
         const insertAt = Math.min(session.position + 2, session.queue.length - 1);
         session.queue.splice(insertAt, 0, ...sisters);
         sisters.forEach((s) => session.injected.add(s.id));
-        sistersAdded = sisters.length;
       }
     }
   }
 
   updateSyncUI();
-  ui.showFeedback(question, chosen, isCorrect, () => {
-    session.position += 1;
-    presentNext();
-  }, sistersAdded);
+}
+
+// Retorna até `limit` questões da mesma área ou tipo não presentes na sessão atual
+function getSisterQuestions(question, session, limit = 2) {
+  const questions = state.getQuestions();
+  const progress  = state.getProgress();
+  const today     = srs.todayStr();
+  const inSession = new Set(session.queue.map((q) => q.id));
+
+  return questions
+    .filter((q) => {
+      if (inSession.has(q.id)) return false;
+      const sameArea = question.area && q.area === question.area;
+      const sameTipo = question.tipo && q.tipo === question.tipo;
+      return sameArea || sameTipo;
+    })
+    .sort((a, b) => {
+      const pa = progress[a.id];
+      const pb = progress[b.id];
+      const aDue = pa && srs.isDue(pa, today) ? 0 : 1;
+      const bDue = pb && srs.isDue(pb, today) ? 0 : 1;
+      if (aDue !== bDue) return aDue - bDue;
+      return (pa ? pa.stability || 0 : 0) - (pb ? pb.stability || 0 : 0);
+    })
+    .slice(0, limit);
 }
 
 function finishSession() {
-  const firstTry = session ? session.firstTry : {};
-  const answered = Object.keys(firstTry).length;
+  const firstTry       = session ? session.firstTry : {};
+  const answered       = Object.keys(firstTry).length;
   const correctFirstTry = Object.values(firstTry).filter(Boolean).length;
   session = null;
   ui.renderSessionEnd({ answered, correctFirstTry });
@@ -227,13 +233,13 @@ function finishSession() {
 
 function refreshStats() {
   const questions = state.getQuestions();
-  const progress = state.getProgress();
-  const temaById = Object.fromEntries(questions.map((q) => [q.id, q.tema || 'Sem tema']));
+  const progress  = state.getProgress();
+  const temaById  = Object.fromEntries(questions.map((q) => [q.id, q.tema || 'Sem tema']));
 
-  const entries = Object.values(progress).filter((p) => p.attempts > 0);
+  const entries       = Object.values(progress).filter((p) => p.attempts > 0);
   const totalAttempts = entries.reduce((s, p) => s + p.attempts, 0);
-  const totalCorrect = entries.reduce((s, p) => s + p.correct, 0);
-  const mastered = entries.filter((p) => p.interval >= 21).length;
+  const totalCorrect  = entries.reduce((s, p) => s + p.correct, 0);
+  const mastered      = entries.filter((p) => (p.stability || 0) >= 21).length;
 
   const byTemaMap = {};
   for (const p of entries) {
@@ -241,28 +247,27 @@ function refreshStats() {
     byTemaMap[tema] = byTemaMap[tema] || { tema, answered: 0, attempts: 0, correct: 0 };
     byTemaMap[tema].answered += 1;
     byTemaMap[tema].attempts += p.attempts;
-    byTemaMap[tema].correct += p.correct;
+    byTemaMap[tema].correct  += p.correct;
   }
   const byTema = Object.values(byTemaMap)
     .map((t) => ({ ...t, accuracy: t.attempts > 0 ? t.correct / t.attempts : 0 }))
     .sort((a, b) => a.tema.localeCompare(b.tema));
 
-  // Estatísticas por tag vêm do registro de tag_stats (acurácia por tentativa)
-  const tagStats = state.getTagStats();
+  const tagStats    = state.getTagStats();
   const makeTagRows = (kind) =>
     Object.values(tagStats)
       .filter((s) => s.kind === kind && s.attempts > 0)
       .map((s) => ({
-        name: s.tag,
-        attempts: s.attempts,
-        correct: s.correct,
-        accuracy: s.correct / s.attempts,
-        recentAcc: s.recent.length
+        name:       s.tag,
+        attempts:   s.attempts,
+        correct:    s.correct,
+        accuracy:   s.correct / s.attempts,
+        recentAcc:  s.recent.length
           ? s.recent.filter((r) => r.correct).length / s.recent.length
           : null,
         recentCount: s.recent.length,
       }))
-      .sort((a, b) => a.accuracy - b.accuracy); // pior primeiro
+      .sort((a, b) => a.accuracy - b.accuracy);
 
   ui.renderStats({
     totalAnswered: entries.length,
@@ -294,7 +299,6 @@ async function syncPending() {
   updateSyncUI();
 }
 
-// Lança em caso de erro (mensagem acionável vinda de api.js) para os chamadores exibirem.
 async function fullSync() {
   const { url, token } = state.getSettings();
   if (!url || !token) throw new Error('Configure a URL do Apps Script e o token na aba Ajustes.');
@@ -315,16 +319,16 @@ async function fullSync() {
 
 function loadConfigForm() {
   const s = state.getSettings();
-  document.getElementById('cfg-url').value = s.url;
-  document.getElementById('cfg-token').value = s.token;
+  document.getElementById('cfg-url').value       = s.url;
+  document.getElementById('cfg-token').value     = s.token;
   document.getElementById('cfg-new-per-day').value = s.newPerDay;
 }
 
 function bindConfig() {
   document.getElementById('btn-save-config').addEventListener('click', () => {
     state.saveSettings({
-      url: document.getElementById('cfg-url').value.trim(),
-      token: document.getElementById('cfg-token').value.trim(),
+      url:       document.getElementById('cfg-url').value.trim(),
+      token:     document.getElementById('cfg-token').value.trim(),
       newPerDay: Math.max(0, parseInt(document.getElementById('cfg-new-per-day').value, 10) || 0),
     });
     ui.setConfigStatus('Configurações salvas.');
@@ -371,13 +375,14 @@ function bindNav() {
     btn.addEventListener('click', () => {
       const screen = btn.dataset.screen;
       if (screen === 'stats') refreshStats();
-      if (screen === 'home') refreshHome();
+      if (screen === 'home')  refreshHome();
       ui.showScreen(screen);
     });
   });
 }
 
 function init() {
+  state.migrateProgress(); // SM-2 → FSRS (no-op se já migrado)
   bindNav();
   bindConfig();
   loadConfigForm();
@@ -391,7 +396,6 @@ function init() {
   });
 
   refreshHome();
-  // Renderiza do cache primeiro e tenta atualizar; erro acionável aparece no indicador.
   const s = state.getSettings();
   if (s.url && s.token) {
     fullSync().catch((err) => ui.setSyncIndicator('offline', 'Falha ao sincronizar: ' + err.message));

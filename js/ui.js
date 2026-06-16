@@ -112,35 +112,62 @@ export function renderQuestion(question, { position, total }, onChoose) {
   }
 }
 
-export function showFeedback(question, chosen, isCorrect, onNext, sistersAdded) {
+// previews: null (errou) ou array [{rating,days,text}] para acertos
+// onRate(rating): 1=Again (auto, em erros) / 2=Difícil / 3=Ok / 4=Fácil
+export function showFeedback(question, chosen, isCorrect, previews, onRate) {
   document.querySelectorAll('#alternatives .alt-btn').forEach((btn) => {
     btn.classList.add('revealed');
     if (btn.dataset.letter === question.gabarito) btn.classList.add('correct');
     else if (btn.dataset.letter === chosen) btn.classList.add('wrong');
   });
-  const area = document.getElementById('feedback-area');
-  const cls = isCorrect ? 'ok' : 'fail';
+
+  const feedbackArea = document.getElementById('feedback-area');
+  const cls  = isCorrect ? 'ok' : 'fail';
   const icon = isCorrect ? '✓' : '✕';
-  let verdictText = isCorrect
+  const verdictText = isCorrect
     ? 'Você acertou!'
     : `Resposta correta: ${escapeHtml(question.gabarito)}. A questão voltará nesta sessão.`;
-  const sisterNote = !isCorrect && sistersAdded
-    ? `<div class="sister-note">${sistersAdded === 1 ? '1 questão similar adicionada' : `${sistersAdded} questões similares adicionadas`} à sessão para reforço</div>`
-    : '';
-  area.innerHTML = `
+
+  const LABELS = { 2: 'Difícil', 3: 'Ok', 4: 'Fácil' };
+
+  let actionHTML;
+  if (isCorrect && previews) {
+    const btns = previews
+      .filter((p) => p.rating >= 2)
+      .map((p) => `
+        <button class="rating-btn rating-${p.rating}" data-rating="${p.rating}">
+          <span class="rating-label">${LABELS[p.rating]}</span>
+          <span class="rating-interval">${escapeHtml(p.text)}</span>
+        </button>`)
+      .join('');
+    actionHTML = `
+      <p class="rating-header">Como foi essa questão?</p>
+      <div class="rating-row">${btns}</div>`;
+  } else {
+    actionHTML = `<button id="btn-next" class="btn-primary" style="margin-top:14px">Próxima questão</button>`;
+  }
+
+  feedbackArea.innerHTML = `
     <div class="feedback-box">
       <div class="verdict ${cls}">
         <span class="verdict-icon">${icon}</span>
         <span>${verdictText}</span>
       </div>
-      ${sisterNote}
       <div class="comentario">${escapeHtml(question.comentario || 'Sem comentário cadastrado.')}</div>
       ${question.fonte ? `<div class="fonte">Fonte · ${escapeHtml(question.fonte)}${question.ano ? ` (${escapeHtml(question.ano)})` : ''}</div>` : ''}
     </div>
-    <button id="btn-next" class="btn-primary" style="margin-top:14px">Próxima questão</button>
+    ${actionHTML}
   `;
-  area.querySelector('#btn-next').addEventListener('click', onNext, { once: true });
-  area.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  if (isCorrect && previews) {
+    feedbackArea.querySelectorAll('.rating-btn').forEach((btn) => {
+      btn.addEventListener('click', () => onRate(parseInt(btn.dataset.rating)), { once: true });
+    });
+  } else {
+    feedbackArea.querySelector('#btn-next').addEventListener('click', () => onRate(1), { once: true });
+  }
+
+  feedbackArea.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
 export function renderSessionEnd({ answered, correctFirstTry }) {
