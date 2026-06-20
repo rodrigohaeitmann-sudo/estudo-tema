@@ -160,7 +160,10 @@ function onAnswer(question, chosen) {
   // Para erros: mostra apenas "Próxima" (rating automático = 1)
   const previews = isCorrect ? srs.previewIntervals(prev) : null;
 
-  ui.showFeedback(question, chosen, isCorrect, previews, (rating) => {
+  // Ficha do estudo (do cache) — null se a questão não tiver estudo_id válido
+  const estudo = state.getEstudo(question.estudo_id);
+
+  ui.showFeedback(question, chosen, isCorrect, previews, estudo, (rating) => {
     commitAnswer(question, chosen, isCorrect, rating, prev);
     session.position += 1;
     presentNext();
@@ -336,6 +339,7 @@ async function fullSync() {
   await syncPending();
   const data = await api.getAll(url, token);
   state.setQuestions(data.questions.filter(isValidQuestion));
+  state.setEstudos(data.estudos || []);
   const toResend = state.mergeServerProgress(data.progress);
   if (toResend.length > 0) {
     state.queueProgressList(toResend);
@@ -374,7 +378,7 @@ function bindConfig() {
     ui.setConfigStatus('Testando conexão...');
     try {
       const data = await api.getAll(url, token);
-      ui.setConfigStatus(`Conexão OK — ${data.questions.length} questões e ${data.progress.length} registros de progresso na planilha.`);
+      ui.setConfigStatus(`Conexão OK — ${data.questions.length} questões, ${(data.estudos || []).length} estudos e ${data.progress.length} registros de progresso na planilha.`);
     } catch (err) {
       ui.setConfigStatus(`Falha na conexão: ${err.message}`);
     }

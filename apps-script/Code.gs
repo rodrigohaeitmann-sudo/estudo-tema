@@ -13,6 +13,7 @@
 const SHEET_QUESTOES = 'Questoes';
 const SHEET_PROGRESSO = 'Progresso';
 const SHEET_RESPOSTAS = 'Respostas';
+const SHEET_ESTUDOS = 'Estudos';
 
 function doGet(e) {
   const params = (e && e.parameter) || {};
@@ -62,6 +63,7 @@ function getAll() {
         gabarito: String(q.gabarito || '').trim().toUpperCase(),
         comentario: String(q.comentario || ''),
         fonte: String(q.fonte || ''),
+        estudo_id: String(q.estudo_id || ''),
         ano: q.ano ? String(q.ano) : ''
       };
     });
@@ -97,8 +99,62 @@ function getAll() {
     ok: true,
     serverTime: new Date().toISOString(),
     questions: questions,
-    progress: progress
+    progress: progress,
+    estudos: readEstudos(ss)
   };
+}
+
+// Lê a aba Estudos (1 linha por estudo). Para cada estudo, resolve o gid da
+// aba-fonte (abrindo o workbook-fonte uma vez por link) e monta o deep link
+// `link#gid=<gid>`. Degrada graciosamente: se a aba não existir, retorna [];
+// se o gid não puder ser resolvido, fonteUrl cai para o link base.
+function readEstudos(ss) {
+  const rows = readRows(ss, SHEET_ESTUDOS).filter(function (r) { return r.estudo_id; });
+  if (!rows.length) return [];
+
+  const gidCache = {}; // link -> { nomeDaAba: gid }
+  return rows.map(function (r) {
+    var link = String(r.link || '').trim();
+    var aba = String(r.aba_fonte || '').trim();
+    var gid = '';
+
+    if (link && aba) {
+      try {
+        if (!(link in gidCache)) {
+          var map = {};
+          SpreadsheetApp.openByUrl(link).getSheets().forEach(function (sh) {
+            map[sh.getName()] = sh.getSheetId();
+          });
+          gidCache[link] = map;
+        }
+        var g = gidCache[link][aba];
+        if (g !== undefined && g !== null) gid = String(g);
+      } catch (e) {
+        gidCache[link] = gidCache[link] || {}; // marca tentado, não reabre
+      }
+    }
+
+    var fonteUrl = link;
+    if (link && gid !== '') fonteUrl = link.split('#')[0] + '#gid=' + gid;
+
+    return {
+      estudo_id: String(r.estudo_id),
+      nome: String(r.nome || ''),
+      referencia: String(r.referencia || ''),
+      tipo_estudo: String(r.tipo_estudo || ''),
+      nivel_evidencia: String(r.nivel_evidencia || ''),
+      populacao: String(r.populacao || ''),
+      intervencao: String(r.intervencao || ''),
+      desfecho_primario: String(r.desfecho_primario || ''),
+      resultados: String(r.resultados || ''),
+      conclusao: String(r.conclusao || ''),
+      toxicidade: String(r.toxicidade || ''),
+      aba_fonte: aba,
+      link: link,
+      gid: gid,
+      fonteUrl: fonteUrl
+    };
+  });
 }
 
 function saveProgress(body) {

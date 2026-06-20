@@ -316,6 +316,55 @@ button:disabled { opacity:.45;cursor:default }
 .comentario { font-size:14.5px;line-height:1.5;color:var(--text);white-space:pre-wrap }
 .fonte { color:var(--text3);font-size:12px;margin-top:11px }
 
+/* ── REVISAR ESTUDO ──────────────────────────────────────────────────────── */
+.btn-study {
+  display:inline-flex;align-items:center;gap:6px;
+  margin-top:14px;
+  background:var(--surface);
+  border:1px solid var(--border-s);
+  color:var(--accent);
+  border-radius:11px;
+  padding:9px 14px;
+  font-size:13.5px;font-weight:700;
+  cursor:pointer;font-family:inherit;
+  transition:opacity .15s;
+}
+.btn-study:active { opacity:.8 }
+.study-card {
+  margin-top:14px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:15px;
+}
+.study-title { font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.2px }
+.study-ref { font-size:12.5px;color:var(--text3);margin-top:4px;line-height:1.45 }
+.study-tags { display:flex;flex-wrap:wrap;gap:6px;margin-top:10px }
+.study-tag {
+  font-size:11px;font-weight:700;
+  background:var(--acc-soft);color:var(--acc-soft-txt);
+  border-radius:6px;padding:3px 8px;
+}
+.study-dl { margin:13px 0 0;padding:0 }
+.study-dl dt {
+  font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--text3);margin-top:11px;
+}
+.study-dl dd {
+  margin:3px 0 0;
+  font-size:14px;line-height:1.5;color:var(--text);
+  white-space:pre-wrap;
+}
+.btn-study-open {
+  display:block;margin-top:15px;
+  text-align:center;
+  background:var(--accent);color:var(--acc-txt);
+  border-radius:11px;padding:11px;
+  font-size:13.5px;font-weight:700;
+  text-decoration:none;
+}
+.btn-study-open:active { opacity:.85 }
+
 /* ── QUESTION TAGS (área + tipo) ─────────────────────────────────────────── */
 .question-tag-row {
   display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px

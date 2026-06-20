@@ -144,9 +144,51 @@ export function renderQuestion(question, { position, total }, onChoose) {
   }
 }
 
+// Só permite URLs http(s) no href de "abrir ficha" (defesa contra javascript: etc).
+function safeUrl(u) {
+  return /^https?:\/\//i.test(u || '') ? u : '';
+}
+
+// Monta o card da ficha do estudo a partir do objeto em cache. Campos vazios
+// são omitidos. Retorna '' se o estudo for nulo (degradação graciosa).
+function buildEstudoCard(estudo) {
+  if (!estudo) return '';
+  const rows = [
+    ['População', estudo.populacao],
+    ['Intervenção', estudo.intervencao],
+    ['Desfecho primário', estudo.desfecho_primario],
+    ['Resultados', estudo.resultados],
+    ['Conclusão', estudo.conclusao],
+    ['Segurança / limitações', estudo.toxicidade],
+  ]
+    .filter(([, v]) => v && String(v).trim())
+    .map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`)
+    .join('');
+
+  const tags = [
+    estudo.tipo_estudo ? `<span class="study-tag">${escapeHtml(estudo.tipo_estudo)}</span>` : '',
+    estudo.nivel_evidencia ? `<span class="study-tag">Nível ${escapeHtml(estudo.nivel_evidencia)}</span>` : '',
+  ].filter(Boolean).join('');
+
+  const openUrl = safeUrl(estudo.fonteUrl) || safeUrl(estudo.link);
+  const openBtn = openUrl
+    ? `<a class="btn-study-open" href="${escapeHtml(openUrl)}" target="_blank" rel="noopener">Abrir ficha completa ↗</a>`
+    : '';
+
+  return `
+    <div class="study-card hidden" id="study-card">
+      ${estudo.nome ? `<div class="study-title">${escapeHtml(estudo.nome)}</div>` : ''}
+      ${estudo.referencia ? `<div class="study-ref">${escapeHtml(estudo.referencia)}</div>` : ''}
+      ${tags ? `<div class="study-tags">${tags}</div>` : ''}
+      ${rows ? `<dl class="study-dl">${rows}</dl>` : ''}
+      ${openBtn}
+    </div>`;
+}
+
 // previews: null (errou) ou array [{rating,days,text}] para acertos
+// estudo: ficha em cache (ou null) para a seção "Revisar estudo"
 // onRate(rating): 1=Again (auto, em erros) / 2=Difícil / 3=Ok / 4=Fácil
-export function showFeedback(question, chosen, isCorrect, previews, onRate) {
+export function showFeedback(question, chosen, isCorrect, previews, estudo, onRate) {
   document.querySelectorAll('#alternatives .alt-btn').forEach((btn) => {
     btn.classList.add('revealed');
     if (btn.dataset.letter === question.gabarito) btn.classList.add('correct');
@@ -179,6 +221,10 @@ export function showFeedback(question, chosen, isCorrect, previews, onRate) {
     actionHTML = `<button id="btn-next" class="btn-primary" style="margin-top:14px">Próxima questão</button>`;
   }
 
+  const studyHTML = estudo
+    ? `<button type="button" class="btn-study" id="btn-study">📄 Revisar estudo</button>${buildEstudoCard(estudo)}`
+    : '';
+
   feedbackArea.innerHTML = `
     <div class="feedback-box">
       <div class="verdict ${cls}">
@@ -187,9 +233,20 @@ export function showFeedback(question, chosen, isCorrect, previews, onRate) {
       </div>
       <div class="comentario">${escapeHtml(question.comentario || 'Sem comentário cadastrado.')}</div>
       ${question.fonte ? `<div class="fonte">Fonte · ${escapeHtml(question.fonte)}${question.ano ? ` (${escapeHtml(question.ano)})` : ''}</div>` : ''}
+      ${studyHTML}
     </div>
     ${actionHTML}
   `;
+
+  if (estudo) {
+    const btnStudy = feedbackArea.querySelector('#btn-study');
+    const card = feedbackArea.querySelector('#study-card');
+    btnStudy.addEventListener('click', () => {
+      const showing = card.classList.toggle('hidden');
+      btnStudy.textContent = showing ? '📄 Revisar estudo' : '📄 Ocultar estudo';
+      if (!showing) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
 
   if (isCorrect && previews) {
     feedbackArea.querySelectorAll('.rating-btn').forEach((btn) => {

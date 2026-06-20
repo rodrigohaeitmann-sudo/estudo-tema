@@ -12,6 +12,7 @@ const K = {
   streak: 'tema:streak',
   lastSync: 'tema:lastSync',
   tagStats: 'tema:tag_stats',
+  estudos: 'tema:estudos',
 };
 
 // Desloca uma data 'YYYY-MM-DD' por `delta` dias (seguro quanto a fuso local).
@@ -53,6 +54,33 @@ export function getQuestions() {
 
 export function setQuestions(questions) {
   write(K.questions, questions);
+}
+
+// --- Estudos (cache do getAll, indexado por estudo_id) ---
+let _estudoMap = null; // memoiza o índice; invalidado em setEstudos
+
+export function getEstudos() {
+  return read(K.estudos, []);
+}
+
+export function setEstudos(list) {
+  write(K.estudos, Array.isArray(list) ? list : []);
+  _estudoMap = null;
+}
+
+function estudoMap() {
+  if (_estudoMap) return _estudoMap;
+  _estudoMap = new Map();
+  for (const e of getEstudos()) {
+    if (e && e.estudo_id) _estudoMap.set(e.estudo_id, e);
+  }
+  return _estudoMap;
+}
+
+// Retorna a ficha do estudo (do cache) ou null. Não faz fetch.
+export function getEstudo(id) {
+  if (!id) return null;
+  return estudoMap().get(id) || null;
 }
 
 // --- Progresso (mapa por questionId) ---
@@ -233,5 +261,7 @@ export function clearLocalData() {
   localStorage.removeItem(K.answeredToday);
   localStorage.removeItem(K.lastSync);
   localStorage.removeItem(K.tagStats);
+  localStorage.removeItem(K.estudos);
+  _estudoMap = null;
   // Nota: a ofensiva (K.streak) é preservada — é uma conquista local, não cache.
 }
