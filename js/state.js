@@ -8,9 +8,21 @@ const K = {
   progress: 'tema:progress',
   pending: 'tema:pending',
   newToday: 'tema:newToday',
+  answeredToday: 'tema:answeredToday',
+  streak: 'tema:streak',
   lastSync: 'tema:lastSync',
   tagStats: 'tema:tag_stats',
 };
+
+// Desloca uma data 'YYYY-MM-DD' por `delta` dias (seguro quanto a fuso local).
+function shiftDay(dateStr, delta) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
 
 function read(key, fallback) {
   try {
@@ -109,6 +121,45 @@ export function incrementNewToday(today) {
   write(K.newToday, { date: today, count: getNewToday(today) + 1 });
 }
 
+// --- Contador total de questões respondidas por dia (meta/ofensiva) ---
+export function getAnsweredToday(today) {
+  const v = read(K.answeredToday, null);
+  return v && v.date === today ? v.count : 0;
+}
+
+export function incrementAnsweredToday(today) {
+  const count = getAnsweredToday(today) + 1;
+  write(K.answeredToday, { date: today, count });
+  return count;
+}
+
+// --- Ofensiva (streak): dias consecutivos cumprindo a meta ---
+// Estrutura: { count, lastDay } — lastDay é a última data em que a meta foi batida.
+
+export function getStreakRaw() {
+  return read(K.streak, { count: 0, lastDay: '' });
+}
+
+// Ofensiva "viva": conta se a meta foi batida hoje ou ontem; senão, foi quebrada.
+export function getCurrentStreak(today) {
+  const s = getStreakRaw();
+  if (!s.lastDay) return 0;
+  if (s.lastDay === today) return s.count;
+  if (s.lastDay === shiftDay(today, -1)) return s.count;
+  return 0;
+}
+
+// Marca a meta de hoje como cumprida; encadeia com ontem ou inicia nova ofensiva.
+// Idempotente: chamar várias vezes no mesmo dia não altera a contagem.
+export function completeStreakDay(today) {
+  const s = getStreakRaw();
+  if (s.lastDay === today) return s.count;
+  s.count = s.lastDay === shiftDay(today, -1) ? s.count + 1 : 1;
+  s.lastDay = today;
+  write(K.streak, s);
+  return s.count;
+}
+
 // --- Estatísticas por tag (área e tipo de questão) ---
 // Estrutura: { [key]: { tag, kind, attempts, correct, recent: [{ts, correct}] } }
 // 'key' = "area:<nome>" ou "tipo:<nome>"; 'recent' mantém as últimas 10 respostas.
@@ -179,6 +230,8 @@ export function clearLocalData() {
   localStorage.removeItem(K.progress);
   localStorage.removeItem(K.pending);
   localStorage.removeItem(K.newToday);
+  localStorage.removeItem(K.answeredToday);
   localStorage.removeItem(K.lastSync);
   localStorage.removeItem(K.tagStats);
+  // Nota: a ofensiva (K.streak) é preservada — é uma conquista local, não cache.
 }

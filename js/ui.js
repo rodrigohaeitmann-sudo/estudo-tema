@@ -26,19 +26,37 @@ export function setSyncIndicator(status, text) {
   if (text !== undefined) syncText.textContent = text;
 }
 
-export function renderHome({ dueCount, newCount, totalAnswered, accuracy, alert, newDoneToday, newPerDay, mastered, weakAreas }) {
+export function renderHome({ dueCount, newCount, extraAvailable, answeredToday, goal, goalMet, streak, totalAnswered, accuracy, alert, mastered, weakAreas }) {
   document.getElementById('due-count').textContent = dueCount;
   document.getElementById('new-count').textContent = newCount;
   document.getElementById('home-total').textContent = totalAnswered;
 
-  // Goal progress
-  const done = newDoneToday ?? 0;
-  const goal = newPerDay ?? 15;
-  const goalPct = goal > 0 ? Math.min(Math.round(done / goal * 100), 100) : 0;
+  // Meta de hoje — total de questões respondidas no dia (revisões + novas)
+  const done = answeredToday ?? 0;
+  const goalN = goal || 0;
+  const goalPct = goalN > 0 ? Math.min(Math.round(done / goalN * 100), 100) : 0;
   const goalCounts = document.getElementById('goal-counts');
   const goalBar = document.getElementById('goal-bar');
-  if (goalCounts) goalCounts.textContent = `${done} / ${goal}`;
-  if (goalBar) goalBar.style.width = goalPct + '%';
+  if (goalCounts) {
+    goalCounts.textContent = goalMet
+      ? `${done} questões · meta cumprida ✓`
+      : `${done} / ${goalN} questões`;
+  }
+  if (goalBar) {
+    goalBar.style.width = goalPct + '%';
+    goalBar.classList.toggle('done', !!goalMet);
+  }
+
+  // Ofensiva (streak)
+  const streakEl = document.getElementById('streak-badge');
+  if (streakEl) {
+    const n = streak || 0;
+    streakEl.textContent = `🔥 ${n}`;
+    streakEl.classList.toggle('active', n > 0);
+    streakEl.title = n > 0
+      ? `Ofensiva de ${n} ${n === 1 ? 'dia' : 'dias'} — cumpra a meta hoje para manter`
+      : 'Cumpra a meta de hoje para iniciar uma ofensiva';
+  }
 
   // Performance
   const accText = accuracy === null ? '–' : `${Math.round(accuracy * 100)}%`;
@@ -78,7 +96,21 @@ export function renderHome({ dueCount, newCount, totalAnswered, accuracy, alert,
     alertEl.classList.add('hidden');
   }
 
-  document.getElementById('btn-start').disabled = dueCount + newCount === 0;
+  // Botão de estudo: sessão normal (cota diária) → estudo extra → tudo em dia
+  const startBtn = document.getElementById('btn-start');
+  if (dueCount + newCount > 0) {
+    startBtn.disabled = false;
+    startBtn.dataset.mode = 'normal';
+    startBtn.textContent = 'Estudar agora';
+  } else if ((extraAvailable || 0) > 0) {
+    startBtn.disabled = false;
+    startBtn.dataset.mode = 'extra';
+    startBtn.textContent = goalMet ? 'Praticar mais' : 'Estudar mais';
+  } else {
+    startBtn.disabled = true;
+    startBtn.dataset.mode = 'normal';
+    startBtn.textContent = 'Tudo em dia ✓';
+  }
 }
 
 export function renderQuestion(question, { position, total }, onChoose) {
@@ -170,14 +202,18 @@ export function showFeedback(question, chosen, isCorrect, previews, onRate) {
   feedbackArea.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
-export function renderSessionEnd({ answered, correctFirstTry }) {
+export function renderSessionEnd({ answered, correctFirstTry, goalMet, streak }) {
   const container = document.getElementById('study-container');
   const pct = answered > 0 ? Math.round((correctFirstTry / answered) * 100) : 0;
+  const streakHTML = goalMet && streak > 0
+    ? `<div class="streak-celebrate">🔥 Ofensiva de ${streak} ${streak === 1 ? 'dia' : 'dias'}!</div>`
+    : '';
   container.innerHTML = `
     <div class="session-summary">
-      <div class="big">🎉</div>
+      <div class="big">${goalMet ? '🔥' : '🎉'}</div>
       <h2>Sessão concluída!</h2>
       <p>${answered} questões · ${correctFirstTry} acertos de primeira (${pct}%)</p>
+      ${streakHTML}
       <button id="btn-back-home" class="btn-primary">Voltar ao início</button>
     </div>
   `;

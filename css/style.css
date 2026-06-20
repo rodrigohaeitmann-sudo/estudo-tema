@@ -146,9 +146,28 @@ main {
 .card-number.plain { color:var(--text) }
 .card-label { color:var(--text2);font-size:13px;font-weight:500;margin-top:6px;display:block }
 
-.goal-header { display:flex;justify-content:space-between;align-items:baseline;margin-bottom:11px }
+.goal-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:6px }
 .section-title { font-size:14px;font-weight:600;color:var(--text) }
 .goal-counts { font-size:13px;color:var(--text2);font-weight:600 }
+.goal-bar.done, .fill.done { background:var(--good) }
+
+/* ── OFENSIVA (streak) ───────────────────────────────────────────────────── */
+.streak-badge {
+  font-size:13px;font-weight:700;
+  color:var(--text3);
+  background:var(--surf-alt);border:1px solid var(--border);
+  border-radius:20px;padding:3px 10px;line-height:1.2;
+  white-space:nowrap;transition:all .15s;
+}
+.streak-badge.active {
+  color:var(--accent);
+  background:var(--acc-soft);border-color:var(--border-s);
+}
+.streak-celebrate {
+  font-size:15px;font-weight:700;color:var(--accent);
+  background:var(--acc-soft);border-radius:12px;
+  padding:10px 16px;margin:-8px 0 24px;display:inline-block;
+}
 
 .perf-card { margin-bottom:20px }
 .perf-row { display:flex;justify-content:space-between;align-items:center }

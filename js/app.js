@@ -17,6 +17,11 @@ function computeHomeData() {
   const unseen   = questions.filter((q) => !progress[q.id]).length;
   const allowance = Math.max(0, settings.newPerDay - state.getNewToday(today));
   const newCount  = Math.min(unseen, allowance);
+  // Questões inéditas além da cota diária — disponíveis no modo "Estudar mais".
+  const extraAvailable = unseen - newCount;
+
+  const goal          = settings.newPerDay || 0;
+  const answeredToday = state.getAnsweredToday(today);
 
   const entries      = Object.values(progress).filter((p) => p.attempts > 0);
   const totalAttempts = entries.reduce((s, p) => s + p.attempts, 0);
@@ -43,7 +48,11 @@ function computeHomeData() {
   return {
     dueCount,
     newCount,
-    newDoneToday: state.getNewToday(today),
+    extraAvailable,
+    answeredToday,
+    goal,
+    goalMet: goal > 0 && answeredToday >= goal,
+    streak: state.getCurrentStreak(today),
     newPerDay:    settings.newPerDay,
     totalAnswered: entries.length,
     accuracy: totalAttempts > 0 ? totalCorrect / totalAttempts : null,
@@ -92,7 +101,12 @@ function hasWeakTag(question, weakKeys) {
   return questionTagKeys(question).some((k) => weakKeys.has(k));
 }
 
-function buildQueue() {
+// Lote de questões inéditas puxadas por sessão no modo "Estudar mais".
+const EXTRA_BATCH = 15;
+
+// mode: 'normal' respeita a cota diária de novas; 'extra' puxa um lote adicional
+// de inéditas, ignorando a cota (estudo além da meta).
+function buildQueue(mode) {
   const questions = state.getQuestions();
   const progress  = state.getProgress();
   const settings  = state.getSettings();
@@ -103,13 +117,16 @@ function buildQueue() {
   const weakDue  = shuffle(due.filter((q) =>  hasWeakTag(q, weakKeys)));
   const otherDue = shuffle(due.filter((q) => !hasWeakTag(q, weakKeys)));
 
-  const allowance = Math.max(0, settings.newPerDay - state.getNewToday(today));
-  const fresh     = questions.filter((q) => !progress[q.id]).slice(0, allowance);
+  const unseen = questions.filter((q) => !progress[q.id]);
+  const limit  = mode === 'extra'
+    ? (settings.newPerDay || EXTRA_BATCH)
+    : Math.max(0, settings.newPerDay - state.getNewToday(today));
+  const fresh  = unseen.slice(0, limit);
   return [...weakDue, ...otherDue, ...fresh];
 }
 
-function startSession() {
-  const queue = buildQueue();
+function startSession(mode) {
+  const queue = buildQueue(mode || 'normal');
   if (queue.length === 0) return;
   session = {
     queue,
@@ -156,6 +173,11 @@ function commitAnswer(question, chosen, isCorrect, rating, prev) {
   const today = srs.todayStr(now);
 
   if (prev.attempts === 0) state.incrementNewToday(today);
+
+  // Conta toda resposta para a meta do dia e fecha a ofensiva ao bater a meta.
+  const answeredToday = state.incrementAnsweredToday(today);
+  const goal = state.getSettings().newPerDay || 0;
+  if (goal > 0 && answeredToday >= goal) state.completeStreakDay(today);
 
   const next = srs.schedule(prev, isCorrect, rating, now);
   state.updateProgress(next);
@@ -224,7 +246,15 @@ function finishSession() {
   const answered       = Object.keys(firstTry).length;
   const correctFirstTry = Object.values(firstTry).filter(Boolean).length;
   session = null;
-  ui.renderSessionEnd({ answered, correctFirstTry });
+
+  const today = srs.todayStr();
+  const goal  = state.getSettings().newPerDay || 0;
+  ui.renderSessionEnd({
+    answered,
+    correctFirstTry,
+    goalMet: goal > 0 && state.getAnsweredToday(today) >= goal,
+    streak:  state.getCurrentStreak(today),
+  });
   refreshHome();
   syncPending().catch(() => updateSyncUI());
 }
@@ -386,7 +416,9 @@ function init() {
   bindNav();
   bindConfig();
   loadConfigForm();
-  document.getElementById('btn-start').addEventListener('click', startSession);
+  document.getElementById('btn-start').addEventListener('click', (e) => {
+    startSession(e.currentTarget.dataset.mode || 'normal');
+  });
 
   window.addEventListener('online', () => {
     syncPending().catch(() => updateSyncUI());
