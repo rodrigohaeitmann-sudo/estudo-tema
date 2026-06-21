@@ -14,11 +14,7 @@ function computeHomeData() {
   const today     = srs.todayStr();
 
   const dueCount = questions.filter((q) => progress[q.id] && srs.isDue(progress[q.id], today)).length;
-  const unseen   = questions.filter((q) => !progress[q.id]).length;
-  const allowance = Math.max(0, settings.newPerDay - state.getNewToday(today));
-  const newCount  = Math.min(unseen, allowance);
-  // Questões inéditas além da cota diária — disponíveis no modo "Estudar mais".
-  const extraAvailable = unseen - newCount;
+  const unseenTotal = questions.filter((q) => !progress[q.id]).length;
 
   const goal          = settings.newPerDay || 0;
   const answeredToday = state.getAnsweredToday(today);
@@ -47,13 +43,11 @@ function computeHomeData() {
 
   return {
     dueCount,
-    newCount,
-    extraAvailable,
+    unseenTotal,
     answeredToday,
     goal,
     goalMet: goal > 0 && answeredToday >= goal,
     streak: state.getCurrentStreak(today),
-    newPerDay:    settings.newPerDay,
     totalAnswered: entries.length,
     accuracy: totalAttempts > 0 ? totalCorrect / totalAttempts : null,
     mastered: entries.filter((p) => (p.stability || 0) >= 21).length,
@@ -101,33 +95,22 @@ function hasWeakTag(question, weakKeys) {
   return questionTagKeys(question).some((k) => weakKeys.has(k));
 }
 
-// Lote de questões inéditas puxadas por sessão no modo "Estudar mais".
-const EXTRA_BATCH = 15;
-
-// mode: 'normal' respeita a cota diária de novas; 'extra' puxa um lote adicional
-// de inéditas, ignorando a cota (estudo além da meta).
-function buildQueue(mode) {
+// Estudo diário = apenas revisões vencidas (questões já vistas que o SRS agendou).
+// Questões inéditas NÃO entram aqui — são introduzidas via "Estudar por tema".
+function buildReviewQueue() {
   const questions = state.getQuestions();
   const progress  = state.getProgress();
-  const settings  = state.getSettings();
   const today     = srs.todayStr();
   const weakKeys  = state.getWeakTagKeys();
 
   const due = questions.filter((q) => progress[q.id] && srs.isDue(progress[q.id], today));
   const weakDue  = shuffle(due.filter((q) =>  hasWeakTag(q, weakKeys)));
   const otherDue = shuffle(due.filter((q) => !hasWeakTag(q, weakKeys)));
-
-  const unseen = questions.filter((q) => !progress[q.id]);
-  const limit  = mode === 'extra'
-    ? (settings.newPerDay || EXTRA_BATCH)
-    : Math.max(0, settings.newPerDay - state.getNewToday(today));
-  const fresh  = unseen.slice(0, limit);
-  return [...weakDue, ...otherDue, ...fresh];
+  return [...weakDue, ...otherDue];
 }
 
-function startSession(mode) {
-  const queue = buildQueue(mode || 'normal');
-  if (queue.length === 0) return;
+function beginSession(queue) {
+  if (queue.length === 0) return false;
   session = {
     queue,
     position: 0,
@@ -136,6 +119,116 @@ function startSession(mode) {
   };
   ui.showScreen('study');
   presentNext();
+  return true;
+}
+
+function startReviewSession() {
+  beginSession(buildReviewQueue());
+}
+
+// ---------- Estudar por tema ----------
+
+const COUNT_OPTIONS = [5, 10, 20, 'max'];
+const themeStudy = { groupBy: null, theme: null, mode: 'novas', count: 10 };
+
+// Quais agrupamentos existem no banco (Área e/ou Tema).
+function groupByOptions() {
+  const qs = state.getQuestions();
+  const opts = [];
+  if (qs.some((q) => q.area)) opts.push('area');
+  if (qs.some((q) => q.tema)) opts.push('tema');
+  return opts.length ? opts : ['tema'];
+}
+
+function themeKeyOf(q, groupBy) {
+  return ((groupBy === 'tema' ? q.tema : q.area) || '').trim();
+}
+
+// Lista de temas do agrupamento, com contagem por modo (novas/erradas/todas).
+function computeThemeGroups(groupBy) {
+  const questions = state.getQuestions();
+  const progress  = state.getProgress();
+  const map = {};
+  for (const q of questions) {
+    const key = themeKeyOf(q, groupBy);
+    if (!key) continue;
+    if (!map[key]) map[key] = { name: key, novas: 0, erradas: 0, todas: 0 };
+    const p = progress[q.id];
+    map[key].todas += 1;
+    if (!p || !p.attempts) map[key].novas += 1;
+    else if (p.correct < p.attempts) map[key].erradas += 1;
+  }
+  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
+
+// Monta a fila de uma sessão por tema conforme modo e quantidade.
+function buildThemeQueue(groupBy, theme, mode, count) {
+  const questions = state.getQuestions();
+  const progress  = state.getProgress();
+  const today     = srs.todayStr();
+
+  let pool = questions.filter((q) => themeKeyOf(q, groupBy) === theme);
+  if (mode === 'novas') {
+    pool = pool.filter((q) => !progress[q.id] || !progress[q.id].attempts);
+    pool = pool.slice(); // mantém a ordem da planilha (sequência pedagógica)
+  } else {
+    if (mode === 'erradas') {
+      pool = pool.filter((q) => {
+        const p = progress[q.id];
+        return p && p.attempts > 0 && p.correct < p.attempts;
+      });
+    }
+    // 'todas' e 'erradas': vencidas primeiro, depois menor estabilidade
+    pool.sort((a, b) => {
+      const pa = progress[a.id];
+      const pb = progress[b.id];
+      const ad = pa && srs.isDue(pa, today) ? 0 : 1;
+      const bd = pb && srs.isDue(pb, today) ? 0 : 1;
+      if (ad !== bd) return ad - bd;
+      return (pa ? pa.stability || 0 : 0) - (pb ? pb.stability || 0 : 0);
+    });
+  }
+  const n = count === 'max' ? pool.length : Math.min(count, pool.length);
+  return pool.slice(0, n);
+}
+
+// Renderiza a tela de montagem da sessão por tema com o estado atual.
+function renderStudySetup() {
+  const opts = groupByOptions();
+  if (!themeStudy.groupBy || !opts.includes(themeStudy.groupBy)) themeStudy.groupBy = opts[0];
+
+  const groups = computeThemeGroups(themeStudy.groupBy);
+  if (themeStudy.theme && !groups.some((g) => g.name === themeStudy.theme)) themeStudy.theme = null;
+
+  const sel = groups.find((g) => g.name === themeStudy.theme) || null;
+  const available = sel ? sel[themeStudy.mode] : 0;
+
+  ui.showStudySetup({
+    groups,
+    groupBy: themeStudy.groupBy,
+    groupByOptions: opts,
+    selectedTheme: themeStudy.theme,
+    mode: themeStudy.mode,
+    count: themeStudy.count,
+    available,
+  }, themeStudyHandlers);
+}
+
+const themeStudyHandlers = {
+  onGroupBy(g) { themeStudy.groupBy = g; themeStudy.theme = null; renderStudySetup(); },
+  onTheme(name) { themeStudy.theme = name; renderStudySetup(); },
+  onMode(m) { themeStudy.mode = m; renderStudySetup(); },
+  onCount(c) { themeStudy.count = c; renderStudySetup(); },
+  onStart() {
+    if (!themeStudy.theme) return;
+    beginSession(buildThemeQueue(themeStudy.groupBy, themeStudy.theme, themeStudy.mode, themeStudy.count));
+  },
+};
+
+// Abre a aba Estudo: retoma a sessão ativa, ou mostra a montagem por tema.
+function openStudyTab() {
+  if (session) ui.showSessionView();
+  else renderStudySetup();
 }
 
 function presentNext() {
@@ -229,6 +322,7 @@ function getSisterQuestions(question, session, limit = 2) {
   return questions
     .filter((q) => {
       if (inSession.has(q.id)) return false;
+      if (!progress[q.id]) return false; // só reforça questões já vistas (não desbloqueia novas)
       const sameArea = question.area && q.area === question.area;
       const sameTipo = question.tipo && q.tipo === question.tipo;
       return sameArea || sameTipo;
@@ -411,6 +505,7 @@ function bindNav() {
       if (screen === 'stats') refreshStats();
       if (screen === 'home')  refreshHome();
       ui.showScreen(screen);
+      if (screen === 'study') openStudyTab();
     });
   });
 }
@@ -420,8 +515,10 @@ function init() {
   bindNav();
   bindConfig();
   loadConfigForm();
-  document.getElementById('btn-start').addEventListener('click', (e) => {
-    startSession(e.currentTarget.dataset.mode || 'normal');
+  document.getElementById('btn-start').addEventListener('click', startReviewSession);
+  document.getElementById('btn-theme-study').addEventListener('click', () => {
+    ui.showScreen('study');
+    openStudyTab();
   });
 
   window.addEventListener('online', () => {

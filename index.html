@@ -72,8 +72,8 @@
           <span class="card-label">para revisar</span>
         </div>
         <div class="card">
-          <span class="card-number plain" id="new-count">–</span>
-          <span class="card-label">novas hoje</span>
+          <span class="card-number plain" id="unseen-count">–</span>
+          <span class="card-label">inéditas</span>
         </div>
       </div>
 
@@ -104,17 +104,15 @@
       <!-- keep id for JS compatibility -->
       <span id="home-total" style="display:none">–</span>
 
-      <button id="btn-start" class="btn-primary">Estudar agora</button>
+      <button id="btn-start" class="btn-primary">Revisar agora</button>
+      <button id="btn-theme-study" class="btn-secondary">Estudar por tema</button>
       <p id="home-sync-text" class="sync-text"></p>
     </section>
 
     <!-- ── Estudo ─────────────────────────────────────────────── -->
     <section id="screen-study" class="screen">
-      <div id="study-container">
-        <p class="muted" style="margin-top:32px;text-align:center">
-          Nenhuma sessão ativa.<br>Volte ao Início e toque em "Estudar agora".
-        </p>
-      </div>
+      <div id="study-setup"></div>
+      <div id="study-container" class="hidden"></div>
     </section>
 
     <!-- ── Estatísticas ───────────────────────────────────────── -->
@@ -157,7 +155,7 @@
           <input type="password" id="cfg-token" placeholder="token definido no Apps Script" autocomplete="off">
         </label>
         <label class="field">
-          <span>Questões novas por dia</span>
+          <span>Meta diária de questões</span>
           <input type="number" id="cfg-new-per-day" min="0" max="200" value="15">
         </label>
       </div>

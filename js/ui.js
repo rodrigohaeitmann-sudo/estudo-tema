@@ -26,9 +26,9 @@ export function setSyncIndicator(status, text) {
   if (text !== undefined) syncText.textContent = text;
 }
 
-export function renderHome({ dueCount, newCount, extraAvailable, answeredToday, goal, goalMet, streak, totalAnswered, accuracy, alert, mastered, weakAreas }) {
+export function renderHome({ dueCount, unseenTotal, answeredToday, goal, goalMet, streak, totalAnswered, accuracy, alert, mastered, weakAreas }) {
   document.getElementById('due-count').textContent = dueCount;
-  document.getElementById('new-count').textContent = newCount;
+  document.getElementById('unseen-count').textContent = unseenTotal;
   document.getElementById('home-total').textContent = totalAnswered;
 
   // Meta de hoje — total de questões respondidas no dia (revisões + novas)
@@ -96,24 +96,91 @@ export function renderHome({ dueCount, newCount, extraAvailable, answeredToday, 
     alertEl.classList.add('hidden');
   }
 
-  // Botão de estudo: sessão normal (cota diária) → estudo extra → tudo em dia
+  // "Estudar agora" = revisões vencidas (SRS). Novas questões entram via "Estudar por tema".
   const startBtn = document.getElementById('btn-start');
-  if (dueCount + newCount > 0) {
+  if (dueCount > 0) {
     startBtn.disabled = false;
-    startBtn.dataset.mode = 'normal';
-    startBtn.textContent = 'Estudar agora';
-  } else if ((extraAvailable || 0) > 0) {
-    startBtn.disabled = false;
-    startBtn.dataset.mode = 'extra';
-    startBtn.textContent = goalMet ? 'Praticar mais' : 'Estudar mais';
+    startBtn.textContent = `Revisar agora · ${dueCount}`;
   } else {
     startBtn.disabled = true;
-    startBtn.dataset.mode = 'normal';
-    startBtn.textContent = 'Tudo em dia ✓';
+    startBtn.textContent = 'Sem revisões pendentes ✓';
   }
 }
 
+// Alterna a aba Estudo para a visão de sessão ativa (esconde a montagem).
+export function showSessionView() {
+  document.getElementById('study-setup').classList.add('hidden');
+  document.getElementById('study-container').classList.remove('hidden');
+}
+
+// Renderiza a montagem da sessão por tema e a torna visível.
+export function showStudySetup(data, handlers) {
+  document.getElementById('study-setup').classList.remove('hidden');
+  document.getElementById('study-container').classList.add('hidden');
+  renderStudySetup(data, handlers);
+}
+
+function renderStudySetup({ groups, groupBy, groupByOptions, selectedTheme, mode, count, available }, h) {
+  const setup = document.getElementById('study-setup');
+  const MODES = [['novas', 'Novas'], ['erradas', 'Erradas'], ['todas', 'Todas']];
+  const COUNTS = [5, 10, 20, 'max'];
+
+  const groupToggle = groupByOptions.length > 1
+    ? `<div class="seg-track gb-toggle">${groupByOptions
+        .map((g) => `<button class="seg-btn ${g === groupBy ? 'on' : ''}" data-gb="${g}">${g === 'area' ? 'Área' : 'Tema'}</button>`)
+        .join('')}</div>`
+    : '';
+
+  const list = groups.length
+    ? groups.map((g) => `
+        <button class="theme-row ${g.name === selectedTheme ? 'sel' : ''}" data-theme="${escapeHtml(g.name)}">
+          <span class="theme-name">${escapeHtml(g.name)}</span>
+          <span class="theme-counts">${g.novas} novas · ${g.erradas} erradas · ${g.todas} total</span>
+        </button>`).join('')
+    : '<p class="muted" style="padding:8px 0">Nenhum tema disponível. Sincronize as questões em Ajustes.</p>';
+
+  const modeBtns = MODES
+    .map(([m, l]) => `<button class="seg-btn ${m === mode ? 'on' : ''}" data-mode="${m}">${l}</button>`)
+    .join('');
+  const countBtns = COUNTS
+    .map((c) => `<button class="seg-btn ${c === count ? 'on' : ''}" data-count="${c}">${c === 'max' ? 'Máx' : c}</button>`)
+    .join('');
+
+  const willStudy = count === 'max' ? available : Math.min(count, available);
+  const startLabel = !selectedTheme ? 'Escolha um tema'
+    : available === 0 ? 'Nada disponível neste modo'
+    : `Iniciar · ${willStudy} ${willStudy === 1 ? 'questão' : 'questões'}`;
+
+  setup.innerHTML = `
+    <h1 class="screen-title">Estudar por tema</h1>
+    ${groupToggle}
+    <div class="card">
+      <div class="settings-section-title">Tema</div>
+      <div class="theme-list">${list}</div>
+    </div>
+    <div class="card">
+      <div class="settings-section-title">O que estudar</div>
+      <div class="seg-track">${modeBtns}</div>
+      <p class="setup-hint">Novas desbloqueiam material inédito · Erradas revisam o que você não acertou · Todas misturam tudo do tema</p>
+    </div>
+    <div class="card">
+      <div class="settings-section-title">Quantas questões</div>
+      <div class="seg-track">${countBtns}</div>
+    </div>
+    <button id="btn-start-theme" class="btn-primary" ${(!selectedTheme || available === 0) ? 'disabled' : ''}>${startLabel}</button>
+  `;
+
+  setup.querySelectorAll('[data-gb]').forEach((b) => b.addEventListener('click', () => h.onGroupBy(b.dataset.gb)));
+  setup.querySelectorAll('[data-theme]').forEach((b) => b.addEventListener('click', () => h.onTheme(b.dataset.theme)));
+  setup.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => h.onMode(b.dataset.mode)));
+  setup.querySelectorAll('[data-count]').forEach((b) => b.addEventListener('click', () =>
+    h.onCount(b.dataset.count === 'max' ? 'max' : parseInt(b.dataset.count, 10))));
+  const startBtn = setup.querySelector('#btn-start-theme');
+  if (startBtn) startBtn.addEventListener('click', () => h.onStart());
+}
+
 export function renderQuestion(question, { position, total }, onChoose) {
+  showSessionView();
   const container = document.getElementById('study-container');
   const pct = total > 0 ? Math.round(((position - 1) / total) * 100) : 0;
   const tagChips = [
@@ -260,6 +327,7 @@ export function showFeedback(question, chosen, isCorrect, previews, estudo, onRa
 }
 
 export function renderSessionEnd({ answered, correctFirstTry, goalMet, streak }) {
+  showSessionView();
   const container = document.getElementById('study-container');
   const pct = answered > 0 ? Math.round((correctFirstTry / answered) * 100) : 0;
   const streakHTML = goalMet && streak > 0
