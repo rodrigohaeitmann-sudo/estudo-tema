@@ -179,6 +179,65 @@ function renderStudySetup({ groups, groupBy, groupByOptions, selectedTheme, mode
   if (startBtn) startBtn.addEventListener('click', () => h.onStart());
 }
 
+// ── Aba ESTUDOS (biblioteca de estudos científicos) ────────────────────────
+
+export function showEstudosList(data, handlers) {
+  document.getElementById('estudos-detail').classList.add('hidden');
+  document.getElementById('estudos-list').classList.remove('hidden');
+  renderEstudosList(data, handlers);
+}
+
+function renderEstudosList({ groupBy, groupByOptions, groups, totalEstudos }, h) {
+  const list = document.getElementById('estudos-list');
+
+  if (totalEstudos === 0) {
+    list.innerHTML = `
+      <h1 class="screen-title">Estudos</h1>
+      <p class="muted" style="margin-top:8px">Nenhum estudo cadastrado. Adicione a aba <b>Estudos</b> na planilha e sincronize em Ajustes.</p>`;
+    return;
+  }
+
+  const toggle = groupByOptions.length > 1
+    ? `<div class="seg-track gb-toggle">${groupByOptions
+        .map((g) => `<button class="seg-btn ${g === groupBy ? 'on' : ''}" data-gb="${g}">${g === 'area' ? 'Área' : 'Tema'}</button>`)
+        .join('')}</div>`
+    : '';
+
+  const sections = groups.map((grp) => `
+    <div class="estudo-group">
+      <div class="estudo-group-title">${escapeHtml(grp.name)}</div>
+      ${grp.estudos.map((e) => `
+        <button class="estudo-row" data-id="${escapeHtml(e.estudo_id)}">
+          <span class="estudo-row-name">${escapeHtml(e.nome)}</span>
+          <span class="estudo-row-meta">${e.total} ${e.total === 1 ? 'questão' : 'questões'}${e.novas ? ` · ${e.novas} novas` : ''}${e.erradas ? ` · ${e.erradas} erradas` : ''}</span>
+        </button>`).join('')}
+    </div>`).join('');
+
+  list.innerHTML = `<h1 class="screen-title">Estudos</h1>${toggle}${sections}`;
+  list.querySelectorAll('[data-gb]').forEach((b) => b.addEventListener('click', () => h.onGroupBy(b.dataset.gb)));
+  list.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => h.onOpen(b.dataset.id)));
+}
+
+export function showEstudoDetail(estudo, stats, h) {
+  document.getElementById('estudos-list').classList.add('hidden');
+  const detail = document.getElementById('estudos-detail');
+  detail.classList.remove('hidden');
+
+  const studyBtn = stats.total > 0
+    ? `<button id="btn-estudo-study" class="btn-primary">Estudar estas questões · ${stats.total}${stats.novas ? ` (${stats.novas} novas)` : ''}</button>`
+    : `<p class="muted" style="text-align:center;margin-top:10px">Nenhuma questão referencia este estudo ainda.</p>`;
+
+  detail.innerHTML = `
+    <button class="btn-back-link" id="btn-estudo-back">← Estudos</button>
+    <div class="study-card study-card-full">${estudoCardInner(estudo)}</div>
+    ${studyBtn}
+  `;
+  detail.querySelector('#btn-estudo-back').addEventListener('click', () => h.onBack());
+  const sb = detail.querySelector('#btn-estudo-study');
+  if (sb) sb.addEventListener('click', () => h.onStudy());
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
 export function renderQuestion(question, { position, total }, onChoose) {
   showSessionView();
   const container = document.getElementById('study-container');
@@ -216,10 +275,8 @@ function safeUrl(u) {
   return /^https?:\/\//i.test(u || '') ? u : '';
 }
 
-// Monta o card da ficha do estudo a partir do objeto em cache. Campos vazios
-// são omitidos. Retorna '' se o estudo for nulo (degradação graciosa).
-function buildEstudoCard(estudo) {
-  if (!estudo) return '';
+// Conteúdo interno da ficha do estudo (sem o wrapper). Campos vazios omitidos.
+function estudoCardInner(estudo) {
   const rows = [
     ['População', estudo.populacao],
     ['Intervenção', estudo.intervencao],
@@ -243,13 +300,18 @@ function buildEstudoCard(estudo) {
     : '';
 
   return `
-    <div class="study-card hidden" id="study-card">
-      ${estudo.nome ? `<div class="study-title">${escapeHtml(estudo.nome)}</div>` : ''}
-      ${estudo.referencia ? `<div class="study-ref">${escapeHtml(estudo.referencia)}</div>` : ''}
-      ${tags ? `<div class="study-tags">${tags}</div>` : ''}
-      ${rows ? `<dl class="study-dl">${rows}</dl>` : ''}
-      ${openBtn}
-    </div>`;
+    ${estudo.nome ? `<div class="study-title">${escapeHtml(estudo.nome)}</div>` : ''}
+    ${estudo.referencia ? `<div class="study-ref">${escapeHtml(estudo.referencia)}</div>` : ''}
+    ${tags ? `<div class="study-tags">${tags}</div>` : ''}
+    ${rows ? `<dl class="study-dl">${rows}</dl>` : ''}
+    ${openBtn}`;
+}
+
+// Versão recolhível usada no feedback pós-resposta (escondida por padrão).
+// Retorna '' se o estudo for nulo (degradação graciosa).
+function buildEstudoCard(estudo) {
+  if (!estudo) return '';
+  return `<div class="study-card hidden" id="study-card">${estudoCardInner(estudo)}</div>`;
 }
 
 // previews: null (errou) ou array [{rating,days,text}] para acertos

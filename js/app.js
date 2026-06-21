@@ -231,6 +231,110 @@ function openStudyTab() {
   else renderStudySetup();
 }
 
+// ---------- Aba Estudos (biblioteca de estudos científicos) ----------
+
+const estudosView = { groupBy: null };
+
+// Estatísticas (total/novas/erradas) das questões que referenciam um estudo.
+function estudoQuestionStats(estudo_id) {
+  const progress = state.getProgress();
+  const qs = state.getQuestions().filter((q) => (q.estudo_id || '').trim() === estudo_id);
+  let novas = 0, erradas = 0;
+  for (const q of qs) {
+    const p = progress[q.id];
+    if (!p || !p.attempts) novas += 1;
+    else if (p.correct < p.attempts) erradas += 1;
+  }
+  return { total: qs.length, novas, erradas };
+}
+
+// Agrupa os estudos salvos por tema (área/tema dominante das suas questões).
+function computeEstudosData(groupBy) {
+  const estudos = state.getEstudos();
+  const questions = state.getQuestions();
+  const progress = state.getProgress();
+
+  const byEstudo = {};
+  for (const q of questions) {
+    const e = (q.estudo_id || '').trim();
+    if (!e) continue;
+    (byEstudo[e] = byEstudo[e] || []).push(q);
+  }
+
+  const groupsMap = {};
+  for (const est of estudos) {
+    const qs = byEstudo[est.estudo_id] || [];
+    let novas = 0, erradas = 0;
+    const tally = {};
+    for (const q of qs) {
+      const p = progress[q.id];
+      if (!p || !p.attempts) novas += 1;
+      else if (p.correct < p.attempts) erradas += 1;
+      const k = themeKeyOf(q, groupBy);
+      if (k) tally[k] = (tally[k] || 0) + 1;
+    }
+    let theme = 'Outros', best = 0;
+    for (const k in tally) { if (tally[k] > best) { best = tally[k]; theme = k; } }
+
+    (groupsMap[theme] = groupsMap[theme] || []).push({
+      estudo_id: est.estudo_id,
+      nome: est.nome || est.estudo_id,
+      total: qs.length,
+      novas,
+      erradas,
+    });
+  }
+
+  const groups = Object.keys(groupsMap)
+    .sort((a, b) => (a === 'Outros' ? 1 : b === 'Outros' ? -1 : a.localeCompare(b, 'pt-BR')))
+    .map((name) => ({
+      name,
+      estudos: groupsMap[name].sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR')),
+    }));
+
+  return { groupBy, groupByOptions: groupByOptions(), groups, totalEstudos: estudos.length };
+}
+
+// Fila com as questões que referenciam um estudo: vencidas primeiro, depois
+// inéditas, depois o restante já visto.
+function buildEstudoQueue(estudo_id) {
+  const progress = state.getProgress();
+  const today = srs.todayStr();
+  const rank = (q) => {
+    const p = progress[q.id];
+    if (p && srs.isDue(p, today)) return 0;
+    if (!p) return 1;
+    return 2;
+  };
+  return state.getQuestions()
+    .filter((q) => (q.estudo_id || '').trim() === estudo_id)
+    .sort((a, b) => rank(a) - rank(b));
+}
+
+function renderEstudos() {
+  const opts = groupByOptions();
+  if (!estudosView.groupBy || !opts.includes(estudosView.groupBy)) estudosView.groupBy = opts[0];
+  ui.showEstudosList(computeEstudosData(estudosView.groupBy), estudosHandlers);
+}
+
+const estudosHandlers = {
+  onGroupBy(g) { estudosView.groupBy = g; renderEstudos(); },
+  onOpen(id) { openEstudoDetail(id); },
+};
+
+function openEstudoDetail(id) {
+  const estudo = state.getEstudo(id);
+  if (!estudo) return;
+  ui.showEstudoDetail(estudo, estudoQuestionStats(id), {
+    onBack: renderEstudos,
+    onStudy: () => beginSession(buildEstudoQueue(id)),
+  });
+}
+
+function openEstudosTab() {
+  renderEstudos();
+}
+
 function presentNext() {
   if (!session || session.position >= session.queue.length) {
     finishSession();
@@ -506,6 +610,7 @@ function bindNav() {
       if (screen === 'home')  refreshHome();
       ui.showScreen(screen);
       if (screen === 'study') openStudyTab();
+      if (screen === 'estudos') openEstudosTab();
     });
   });
 }

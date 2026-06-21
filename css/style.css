@@ -200,6 +200,33 @@ button:disabled { opacity:.45;cursor:default }
 .seg-btn { flex:1;text-align:center;padding:8px 2px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:transparent;color:var(--text2);transition:all .15s;white-space:nowrap }
 .seg-btn.on { background:var(--accent);color:var(--acc-txt) }
 
+/* ── ABA ESTUDOS (biblioteca) ────────────────────────────────────────────── */
+.estudo-group { margin-bottom:18px }
+.estudo-group-title {
+  font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--text3);margin:0 2px 9px;
+}
+.estudo-row {
+  display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+  width:100%;text-align:left;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:13px;
+  padding:13px 15px;margin-bottom:9px;
+  box-shadow:var(--shadow);
+  cursor:pointer;font-family:inherit;
+  transition:border-color .15s;
+}
+.estudo-row:active { border-color:var(--accent) }
+.estudo-row-name { font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.2px }
+.estudo-row-meta { font-size:12px;color:var(--text2);font-weight:600 }
+.btn-back-link {
+  background:none;border:none;color:var(--accent);
+  font-size:14px;font-weight:700;font-family:inherit;
+  padding:4px 0;margin-bottom:8px;cursor:pointer;
+}
+.study-card-full { margin-bottom:16px }
+
 /* ── ESTUDAR POR TEMA (setup) ────────────────────────────────────────────── */
 .gb-toggle { margin-bottom:14px }
 .theme-list { display:flex;flex-direction:column;gap:8px }
