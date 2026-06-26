@@ -96,25 +96,46 @@ export function renderHome({ dueCount, unseenTotal, wrongCount, hasQuestions, an
     alertEl.classList.add('hidden');
   }
 
-  // Estudo sugerido: bloco diário equilibrado (disponível se houver questões).
-  const suggestedBtn = document.getElementById('btn-suggested');
-  if (suggestedBtn) suggestedBtn.disabled = !hasQuestions;
+}
 
-  // "Revisar agora" = revisões vencidas (SRS).
-  const startBtn = document.getElementById('btn-start');
-  if (dueCount > 0) {
-    startBtn.disabled = false;
-    startBtn.textContent = `Revisar agora · ${dueCount}`;
+// Launcher da Home: seletor de atividade (Sugerido / Revisar / Erradas),
+// opção de lote (10/15/20/Todas para revisões) e um único botão Iniciar.
+export function renderLauncher(sel, counts, h) {
+  const ACTIVITIES = [['sugerido', 'Sugerido'], ['revisar', 'Revisar'], ['erradas', 'Erradas']];
+  const COUNTS = [10, 15, 20, 'todas'];
+  const showCounts = sel.activity !== 'sugerido';
+
+  const activityBtns = ACTIVITIES
+    .map(([a, l]) => `<button class="seg-btn ${a === sel.activity ? 'on' : ''}" data-activity="${a}">${l}</button>`)
+    .join('');
+  const countBtns = COUNTS
+    .map((c) => `<button class="seg-btn ${c === sel.count ? 'on' : ''}" data-count="${c}">${c === 'todas' ? 'Todas' : c}</button>`)
+    .join('');
+
+  let hint = '', available = false;
+  if (sel.activity === 'sugerido') {
+    hint = 'Bloco de 10 questões equilibrado entre temas e estudos.';
+    available = counts.hasQuestions;
+  } else if (sel.activity === 'revisar') {
+    hint = counts.due > 0 ? `${counts.due} ${counts.due === 1 ? 'questão' : 'questões'} para revisar.` : 'Nenhuma revisão pendente.';
+    available = counts.due > 0;
   } else {
-    startBtn.disabled = true;
-    startBtn.textContent = 'Sem revisões pendentes ✓';
+    hint = counts.wrong > 0 ? `${counts.wrong} ${counts.wrong === 1 ? 'questão errada' : 'questões erradas'} acumuladas.` : 'Nenhuma errada pendente.';
+    available = counts.wrong > 0;
   }
 
-  // Revisar erradas (lotes de 10/15/20).
-  const wn = wrongCount || 0;
-  const wrongLabel = document.getElementById('wrong-label');
-  if (wrongLabel) wrongLabel.textContent = wn > 0 ? `Revisar erradas · ${wn}` : 'Nenhuma errada pendente';
-  document.querySelectorAll('[data-wrong]').forEach((c) => { c.disabled = wn === 0; });
+  const card = document.getElementById('launcher');
+  card.innerHTML = `
+    <div class="seg-track" id="launch-activity">${activityBtns}</div>
+    ${showCounts ? `<div class="seg-track launch-counts">${countBtns}</div>` : ''}
+    <p class="launch-hint">${hint}</p>
+    <button id="btn-iniciar" class="btn-primary" style="margin:0" ${available ? '' : 'disabled'}>Iniciar</button>
+  `;
+
+  card.querySelectorAll('[data-activity]').forEach((b) => b.addEventListener('click', () => h.onActivity(b.dataset.activity)));
+  card.querySelectorAll('[data-count]').forEach((b) => b.addEventListener('click', () =>
+    h.onCount(b.dataset.count === 'todas' ? 'todas' : parseInt(b.dataset.count, 10))));
+  card.querySelector('#btn-iniciar').addEventListener('click', () => h.onStart());
 }
 
 // Alterna a aba Estudo para a visão de sessão ativa (esconde a montagem).
@@ -248,11 +269,15 @@ export function showEstudoDetail(estudo, stats, h) {
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
-export function renderQuestion(question, { position, total }, onChoose) {
+export function renderQuestion(question, { position, total, isNew }, onChoose) {
   showSessionView();
   const container = document.getElementById('study-container');
   const pct = total > 0 ? Math.round(((position - 1) / total) * 100) : 0;
+  const statusChip = isNew
+    ? '<span class="tag-chip tag-nova">Nova</span>'
+    : '<span class="tag-chip tag-revisao">Revisão</span>';
   const tagChips = [
+    statusChip,
     question.area ? `<span class="tag-chip tag-area">${escapeHtml(question.area)}</span>` : '',
     question.tipo ? `<span class="tag-chip tag-tipo">${escapeHtml(question.tipo)}</span>` : '',
   ].filter(Boolean).join('');

@@ -60,6 +60,7 @@ function computeHomeData() {
 
 function refreshHome() {
   ui.renderHome(computeHomeData());
+  renderLauncher();
   updateSyncUI();
 }
 
@@ -99,7 +100,7 @@ function hasWeakTag(question, weakKeys) {
 
 // Estudo diário = apenas revisões vencidas (questões já vistas que o SRS agendou).
 // Questões inéditas NÃO entram aqui — são introduzidas via "Estudar por tema".
-function buildReviewQueue() {
+function buildReviewQueue(limit) {
   const questions = state.getQuestions();
   const progress  = state.getProgress();
   const today     = srs.todayStr();
@@ -108,24 +109,30 @@ function buildReviewQueue() {
   const due = questions.filter((q) => progress[q.id] && srs.isDue(progress[q.id], today));
   const weakDue  = shuffle(due.filter((q) =>  hasWeakTag(q, weakKeys)));
   const otherDue = shuffle(due.filter((q) => !hasWeakTag(q, weakKeys)));
-  return [...weakDue, ...otherDue];
+  const all = [...weakDue, ...otherDue];
+  return limit ? all.slice(0, limit) : all;
 }
 
 function beginSession(queue) {
   if (queue.length === 0) return false;
+  // Snapshot de quais questões eram inéditas no início (rótulo Nova/Revisão estável
+  // mesmo que uma nova seja reenfileirada após erro).
+  const progress = state.getProgress();
+  const newSet = new Set();
+  for (const q of queue) {
+    const p = progress[q.id];
+    if (!p || !p.attempts) newSet.add(q.id);
+  }
   session = {
     queue,
     position: 0,
     firstTry: {},          // questionId → acertou na primeira vez nesta sessão
     injected: new Set(),   // IDs injetados como irmãs (não geram novas injeções)
+    newSet,                // IDs que eram inéditos no início da sessão
   };
   ui.showScreen('study');
   presentNext();
   return true;
-}
-
-function startReviewSession() {
-  beginSession(buildReviewQueue());
 }
 
 // ---------- Revisão global de erradas (lotes de 10/15/20) ----------
@@ -239,6 +246,39 @@ function buildSuggestedQueue() {
 function startSuggestedSession() {
   beginSession(buildSuggestedQueue());
 }
+
+// ---------- Launcher da Home (seletor de atividade + Iniciar) ----------
+
+const launcher = { activity: 'sugerido', count: 'todas' };
+
+// Contagens para o launcher: vencidas e erradas pendentes.
+function launcherCounts() {
+  const progress = state.getProgress();
+  const today = srs.todayStr();
+  const qs = state.getQuestions();
+  let due = 0, wrong = 0;
+  for (const q of qs) {
+    const p = progress[q.id];
+    if (p && srs.isDue(p, today)) due += 1;
+    if (p && p.attempts > 0 && p.correct < p.attempts) wrong += 1;
+  }
+  return { due, wrong, hasQuestions: qs.length > 0 };
+}
+
+function renderLauncher() {
+  ui.renderLauncher(launcher, launcherCounts(), launcherHandlers);
+}
+
+const launcherHandlers = {
+  onActivity(a) { launcher.activity = a; renderLauncher(); },
+  onCount(c) { launcher.count = c; renderLauncher(); },
+  onStart() {
+    const lim = launcher.count === 'todas' ? null : launcher.count;
+    if (launcher.activity === 'sugerido') startSuggestedSession();
+    else if (launcher.activity === 'revisar') beginSession(buildReviewQueue(lim));
+    else if (launcher.activity === 'erradas') startWrongSession(lim);
+  },
+};
 
 // ---------- Estudar por tema ----------
 
@@ -457,7 +497,7 @@ function presentNext() {
   const question = session.queue[session.position];
   ui.renderQuestion(
     question,
-    { position: session.position + 1, total: session.queue.length },
+    { position: session.position + 1, total: session.queue.length, isNew: session.newSet.has(question.id) },
     (letter) => onAnswer(question, letter)
   );
 }
@@ -734,10 +774,6 @@ function init() {
   bindNav();
   bindConfig();
   loadConfigForm();
-  document.getElementById('btn-suggested').addEventListener('click', startSuggestedSession);
-  document.getElementById('btn-start').addEventListener('click', startReviewSession);
-  document.querySelectorAll('[data-wrong]').forEach((b) =>
-    b.addEventListener('click', () => startWrongSession(parseInt(b.dataset.wrong, 10))));
   document.getElementById('btn-theme-study').addEventListener('click', () => {
     ui.showScreen('study');
     openStudyTab();
