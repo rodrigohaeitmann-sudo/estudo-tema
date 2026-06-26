@@ -104,7 +104,20 @@
       <!-- keep id for JS compatibility -->
       <span id="home-total" style="display:none">–</span>
 
-      <button id="btn-start" class="btn-primary">Revisar agora</button>
+      <button id="btn-suggested" class="btn-primary">✨ Estudo sugerido</button>
+
+      <div class="card review-card">
+        <button id="btn-start" class="btn-secondary" style="margin-bottom:0">Revisar agora</button>
+        <div class="wrong-row">
+          <span class="wrong-label" id="wrong-label">Revisar erradas</span>
+          <div class="wrong-chips">
+            <button class="chip" data-wrong="10">10</button>
+            <button class="chip" data-wrong="15">15</button>
+            <button class="chip" data-wrong="20">20</button>
+          </div>
+        </div>
+      </div>
+
       <button id="btn-theme-study" class="btn-secondary">Estudar por tema</button>
       <p id="home-sync-text" class="sync-text"></p>
     </section>

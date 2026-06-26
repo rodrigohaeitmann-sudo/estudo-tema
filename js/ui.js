@@ -26,7 +26,7 @@ export function setSyncIndicator(status, text) {
   if (text !== undefined) syncText.textContent = text;
 }
 
-export function renderHome({ dueCount, unseenTotal, answeredToday, goal, goalMet, streak, totalAnswered, accuracy, alert, mastered, weakAreas }) {
+export function renderHome({ dueCount, unseenTotal, wrongCount, hasQuestions, answeredToday, goal, goalMet, streak, totalAnswered, accuracy, alert, mastered, weakAreas }) {
   document.getElementById('due-count').textContent = dueCount;
   document.getElementById('unseen-count').textContent = unseenTotal;
   document.getElementById('home-total').textContent = totalAnswered;
@@ -96,7 +96,11 @@ export function renderHome({ dueCount, unseenTotal, answeredToday, goal, goalMet
     alertEl.classList.add('hidden');
   }
 
-  // "Estudar agora" = revisões vencidas (SRS). Novas questões entram via "Estudar por tema".
+  // Estudo sugerido: bloco diário equilibrado (disponível se houver questões).
+  const suggestedBtn = document.getElementById('btn-suggested');
+  if (suggestedBtn) suggestedBtn.disabled = !hasQuestions;
+
+  // "Revisar agora" = revisões vencidas (SRS).
   const startBtn = document.getElementById('btn-start');
   if (dueCount > 0) {
     startBtn.disabled = false;
@@ -105,6 +109,12 @@ export function renderHome({ dueCount, unseenTotal, answeredToday, goal, goalMet
     startBtn.disabled = true;
     startBtn.textContent = 'Sem revisões pendentes ✓';
   }
+
+  // Revisar erradas (lotes de 10/15/20).
+  const wn = wrongCount || 0;
+  const wrongLabel = document.getElementById('wrong-label');
+  if (wrongLabel) wrongLabel.textContent = wn > 0 ? `Revisar erradas · ${wn}` : 'Nenhuma errada pendente';
+  document.querySelectorAll('[data-wrong]').forEach((c) => { c.disabled = wn === 0; });
 }
 
 // Alterna a aba Estudo para a visão de sessão ativa (esconde a montagem).

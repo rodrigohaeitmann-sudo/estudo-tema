@@ -44,6 +44,8 @@ function computeHomeData() {
   return {
     dueCount,
     unseenTotal,
+    wrongCount: entries.filter((p) => p.correct < p.attempts).length,
+    hasQuestions: questions.length > 0,
     answeredToday,
     goal,
     goalMet: goal > 0 && answeredToday >= goal,
@@ -124,6 +126,118 @@ function beginSession(queue) {
 
 function startReviewSession() {
   beginSession(buildReviewQueue());
+}
+
+// ---------- Revisão global de erradas (lotes de 10/15/20) ----------
+
+// Todas as questões já vistas que o usuário errou (acertos < tentativas), de
+// todos os temas. Vencidas primeiro, depois menor estabilidade. Limitado ao lote.
+function buildWrongQueue(limit) {
+  const progress = state.getProgress();
+  const today    = srs.todayStr();
+  const wrong = state.getQuestions().filter((q) => {
+    const p = progress[q.id];
+    return p && p.attempts > 0 && p.correct < p.attempts;
+  });
+  wrong.sort((a, b) => {
+    const pa = progress[a.id];
+    const pb = progress[b.id];
+    const ad = srs.isDue(pa, today) ? 0 : 1;
+    const bd = srs.isDue(pb, today) ? 0 : 1;
+    if (ad !== bd) return ad - bd;
+    return (pa.stability || 0) - (pb.stability || 0);
+  });
+  return limit ? wrong.slice(0, limit) : wrong;
+}
+
+function startWrongSession(limit) {
+  beginSession(buildWrongQueue(limit));
+}
+
+// ---------- Estudo sugerido (bloco diário equilibrado de 10) ----------
+
+// Monta um bloco de ~10 questões: 6 de um tema prioritário (3 de um estudo + 3
+// de outro, para manter o fluxo) + 4 de revisão. O tema prioritário e os estudos
+// são escolhidos pelos MENOS respondidos, equilibrando a evolução entre todos os
+// temas e estudos ao longo do tempo (repetível: cada bloco recalcula o balanço).
+function buildSuggestedQueue() {
+  const questions = state.getQuestions();
+  const progress  = state.getProgress();
+  const today     = srs.todayStr();
+  const groupBy   = groupByOptions()[0];
+
+  const isNewQ = (q) => !progress[q.id] || !progress[q.id].attempts;
+  const isDueQ = (q) => progress[q.id] && srs.isDue(progress[q.id], today);
+
+  // Contagens de respondidas para equilíbrio (por tema e por estudo).
+  const themeAnswered = {}, studyAnswered = {}, byTheme = {};
+  for (const q of questions) {
+    const p = progress[q.id];
+    const ans = p && p.attempts ? 1 : 0;
+    const tk = themeKeyOf(q, groupBy);
+    if (tk) { themeAnswered[tk] = (themeAnswered[tk] || 0) + ans; (byTheme[tk] = byTheme[tk] || []).push(q); }
+    const e = (q.estudo_id || '').trim();
+    if (e) studyAnswered[e] = (studyAnswered[e] || 0) + ans;
+  }
+
+  const used = new Set();
+  const rankFresh = (q) => (isNewQ(q) ? 0 : isDueQ(q) ? 1 : 2); // inéditas → vencidas → resto
+  const pick = (pool, n) => {
+    const chosen = pool
+      .filter((q) => !used.has(q.id))
+      .sort((a, b) => rankFresh(a) - rankFresh(b) || ((progress[a.id] && progress[a.id].stability) || 0) - ((progress[b.id] && progress[b.id].stability) || 0))
+      .slice(0, n);
+    chosen.forEach((q) => used.add(q.id));
+    return chosen;
+  };
+
+  const block = [];
+
+  // 1) Tema prioritário: menos respondido (sorteio leve entre os 3 menores p/ variar).
+  const candidateThemes = Object.keys(byTheme)
+    .filter((tk) => byTheme[tk].some((q) => isNewQ(q) || isDueQ(q)))
+    .sort((a, b) => (themeAnswered[a] || 0) - (themeAnswered[b] || 0));
+  const lowest = candidateThemes.slice(0, Math.min(3, candidateThemes.length));
+  const priorityTheme = lowest.length ? lowest[Math.floor(Math.random() * lowest.length)] : null;
+
+  // 2) Dentro do tema, 2 estudos menos respondidos → 3 + 3.
+  if (priorityTheme) {
+    const qsTheme = byTheme[priorityTheme];
+    const byStudy = {};
+    for (const q of qsTheme) {
+      const e = (q.estudo_id || '').trim();
+      if (e) (byStudy[e] = byStudy[e] || []).push(q);
+    }
+    const studies = Object.keys(byStudy)
+      .filter((e) => byStudy[e].some((q) => !used.has(q.id)))
+      .sort((a, b) => (studyAnswered[a] || 0) - (studyAnswered[b] || 0));
+    if (studies.length >= 2) {
+      block.push(...pick(byStudy[studies[0]], 3));
+      block.push(...pick(byStudy[studies[1]], 3));
+    } else if (studies.length === 1) {
+      block.push(...pick(byStudy[studies[0]], 6));
+    }
+    // Completa as 6 com qualquer questão do tema, se faltou (poucos estudos/questões).
+    if (block.length < 6) block.push(...pick(qsTheme, 6 - block.length));
+  }
+
+  // 3) 4 questões de revisão (vencidas), priorizando áreas fracas.
+  const weakKeys = state.getWeakTagKeys();
+  const due = questions.filter((q) => isDueQ(q) && !used.has(q.id));
+  const weakDue  = shuffle(due.filter((q) =>  hasWeakTag(q, weakKeys)));
+  const otherDue = shuffle(due.filter((q) => !hasWeakTag(q, weakKeys)));
+  const reviews = [...weakDue, ...otherDue].slice(0, 4);
+  reviews.forEach((q) => used.add(q.id));
+  block.push(...reviews);
+
+  // 4) Completa até 10 se faltou (ex.: poucas vencidas).
+  if (block.length < 10) block.push(...pick(questions, 10 - block.length));
+
+  return block;
+}
+
+function startSuggestedSession() {
+  beginSession(buildSuggestedQueue());
 }
 
 // ---------- Estudar por tema ----------
@@ -620,7 +734,10 @@ function init() {
   bindNav();
   bindConfig();
   loadConfigForm();
+  document.getElementById('btn-suggested').addEventListener('click', startSuggestedSession);
   document.getElementById('btn-start').addEventListener('click', startReviewSession);
+  document.querySelectorAll('[data-wrong]').forEach((b) =>
+    b.addEventListener('click', () => startWrongSession(parseInt(b.dataset.wrong, 10))));
   document.getElementById('btn-theme-study').addEventListener('click', () => {
     ui.showScreen('study');
     openStudyTab();
